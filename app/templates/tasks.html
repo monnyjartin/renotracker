@@ -1,0 +1,91 @@
+{% extends "_layout.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h2 class="mb-1">Tasks</h2>
+    <div class="small-muted">Project: <span class="badge-soft">{{ active_project.name }}</span></div>
+  </div>
+</div>
+
+<div class="card p-3 mb-3">
+  <h5 class="mb-2">Add a task</h5>
+  <form method="post" action="/tasks/create" class="row g-2">
+    <div class="col-12 col-md-4">
+      <input class="form-control" name="title" placeholder="Task title (e.g., Fit skirting)" required>
+    </div>
+    <div class="col-12 col-md-4">
+      <input class="form-control" name="description" placeholder="Description (optional)">
+    </div>
+    <div class="col-6 col-md-2">
+      <select class="form-select" name="room_id">
+        <option value="">Room (optional)</option>
+        {% for r in rooms %}
+          <option value="{{ r.id }}">{{ r.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-3 col-md-1">
+      <input class="form-control" type="date" name="due_date" title="Due date">
+    </div>
+    <div class="col-3 col-md-1">
+      <select class="form-select" name="priority" title="Priority">
+        <option value="1">P1</option>
+        <option value="2">P2</option>
+        <option value="3" selected>P3</option>
+        <option value="4">P4</option>
+        <option value="5">P5</option>
+      </select>
+    </div>
+    <div class="col-12 d-grid">
+      <button class="btn btn-primary" type="submit">Create task</button>
+    </div>
+  </form>
+</div>
+
+<div class="board">
+  {% for col, items in cols.items() %}
+    <div class="board-col">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <h5 class="mb-0 text-capitalize">{{ col }}</h5>
+        <span class="badge-soft">{{ items|length }}</span>
+      </div>
+
+      {% for t in items %}
+        <div class="task">
+          <h6>{{ t.title }}</h6>
+          <div class="small-muted">
+            {% if t.room %}{{ t.room.name }}{% endif %}
+            {% if t.due_date %}{% if t.room %} • {% endif %}Due {{ t.due_date }}{% endif %}
+            • P{{ t.priority }}
+          </div>
+          {% if t.description %}<div class="small-muted mt-1">{{ t.description }}</div>{% endif %}
+
+          <div class="mt-2 d-flex gap-2 flex-wrap">
+            <form method="post" action="/tasks/{{ t.id }}/move">
+              <input type="hidden" name="status" value="todo">
+              <button class="btn btn-sm btn-outline-secondary" type="submit">To do</button>
+            </form>
+            <form method="post" action="/tasks/{{ t.id }}/move">
+              <input type="hidden" name="status" value="doing">
+              <button class="btn btn-sm btn-outline-secondary" type="submit">Doing</button>
+            </form>
+            <form method="post" action="/tasks/{{ t.id }}/move">
+              <input type="hidden" name="status" value="blocked">
+              <button class="btn btn-sm btn-outline-secondary" type="submit">Blocked</button>
+            </form>
+            <form method="post" action="/tasks/{{ t.id }}/move">
+              <input type="hidden" name="status" value="done">
+              <button class="btn btn-sm btn-outline-success" type="submit">Done</button>
+            </form>
+            <a class="btn btn-sm btn-outline-primary" href="/expenses?task_id={{ t.id }}">View expenses</a>
+          </div>
+        </div>
+      {% endfor %}
+
+      {% if items|length == 0 %}
+        <div class="small-muted">No tasks.</div>
+      {% endif %}
+    </div>
+  {% endfor %}
+</div>
+{% endblock %}

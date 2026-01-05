@@ -1,0 +1,248 @@
+{% extends "_layout.html" %}
+{% block content %}
+<h1 class="h3 mb-3">Documents</h1>
+
+{% if not s3_enabled %}
+<div class="alert alert-warning">
+  MinIO is not configured. Check MINIO_ENDPOINT / MINIO_ACCESS_KEY / MINIO_SECRET_KEY / MINIO_BUCKET in docker-compose.yml.
+</div>
+{% endif %}
+
+<div class="card mb-4">
+  <div class="card-body">
+    <form method="post" action="/documents/upload" enctype="multipart/form-data" class="row g-3">
+      <div class="col-12 col-md-6">
+        <label class="form-label">File</label>
+        <input class="form-control" type="file" name="file" required>
+      </div>
+
+      <div class="col-12 col-md-6">
+        <label class="form-label">Type</label>
+        <select class="form-select" name="doc_type">
+          <option value="receipt">Receipt</option>
+          <option value="paperwork">Paperwork</option>
+          <option value="photo">Photo</option>
+          <option value="warranty">Warranty</option>
+          <option value="recipe">Recipe / How-to</option>
+        </select>
+      </div>
+
+      <div class="col-12 col-md-6">
+        <label class="form-label">Photo group (photos only)</label>
+        <select class="form-select" name="photo_group">
+          <option value="before">Before</option>
+          <option value="during">During</option>
+          <option value="after">After</option>
+        </select>
+      </div>
+
+      <div class="col-12 col-md-6">
+        <label class="form-label">Tags (comma-separated)</label>
+        <input class="form-control" name="tags" placeholder="e.g. kitchen, plaster, invoice">
+      </div>
+
+      <div class="col-12">
+        <label class="form-label">Title</label>
+        <input class="form-control" name="title" placeholder="e.g. Kitchen invoice / Building work invoice / Before plastering photo">
+      </div>
+
+      <div class="col-12">
+        <label class="form-label">Notes</label>
+        <textarea class="form-control" name="notes" rows="2" placeholder="Optional notes"></textarea>
+      </div>
+
+      <div class="col-12 col-md-4">
+        <label class="form-label">Room (optional)</label>
+        <select class="form-select" name="room_id">
+          <option value="">—</option>
+          {% for r in rooms %}
+          <option value="{{ r.id }}">{{ r.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-12 col-md-4">
+        <label class="form-label">Tasks (optional)</label>
+        <select class="form-select" name="task_ids" multiple size="4">
+          {% for t in tasks %}
+          <option value="{{ t.id }}">{{ t.title }} ({{ t.status }})</option>
+          {% endfor %}
+        </select>
+        <div class="form-text">Hold Ctrl (Windows) to select multiple.</div>
+      </div>
+
+      <div class="col-12 col-md-4">
+        <label class="form-label">Expense (optional)</label>
+        <select class="form-select" name="expense_id">
+          <option value="">—</option>
+          {% for e in expenses %}
+          <option value="{{ e.id }}">{{ e.vendor or "Expense" }} — {{ e.gross_amount }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="col-12">
+        <button class="btn btn-primary" type="submit" {% if not s3_enabled %}disabled{% endif %}>Upload</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <div class="table-responsive">
+      <table class="table table-sm align-middle">
+        <thead>
+          <tr>
+            <th>Type</th>
+            <th>Title</th>
+            <th>Tags</th>
+            <th>Room</th>
+            <th>Tasks</th>
+            <th>Original file</th>
+            <th>Created</th>
+            <th class="text-end"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for d in docs %}
+          <tr>
+            <td><span class="badge text-bg-light">{{ d.doc_type }}</span></td>
+            <td>{{ d.title }}</td>
+            <td class="text-muted">{{ d.tags or "" }}</td>
+
+            <td class="text-muted">
+              {% if d.room_id %}
+                {% for r in rooms %}{% if r.id == d.room_id %}{{ r.name }}{% endif %}{% endfor %}
+              {% endif %}
+            </td>
+
+            <td class="text-muted">
+              {% if d.tasks %}
+                {% for t in d.tasks %}
+                  <span class="badge text-bg-light">{{ t.title }}</span>
+                {% endfor %}
+              {% endif %}
+            </td>
+
+            <td class="text-muted">{{ d.original_filename or "" }}</td>
+            <td class="text-muted">{{ d.created_at.strftime("%Y-%m-%d %H:%M") if d.created_at else "" }}</td>
+            <td class="text-end">
+              <button class="btn btn-sm btn-outline-secondary" type="button"
+                      onclick="toggleEdit('{{ d.id }}')">Edit</button>
+              <a class="btn btn-sm btn-outline-secondary" href="/documents/{{ d.id }}/preview" target="_blank">Preview</a>
+              <a class="btn btn-sm btn-outline-primary" href="/documents/{{ d.id }}/download">Download</a>
+
+              <form method="post" action="/documents/{{ d.id }}/delete" style="display:inline;"
+                    onsubmit="return confirm('Delete this document?');">
+                <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+              </form>
+            </td>
+          </tr>
+
+          <!-- Inline edit row -->
+          <tr id="edit-{{ d.id }}" style="display:none;">
+            <td colspan="8">
+              <div class="border rounded p-3 bg-light">
+                <form method="post" action="/documents/{{ d.id }}/update" class="row g-3">
+
+                  <div class="col-12 col-md-4">
+                    <label class="form-label">Type</label>
+                    <select class="form-select" name="doc_type">
+                      <option value="receipt"   {% if d.doc_type == "receipt" %}selected{% endif %}>Receipt</option>
+                      <option value="paperwork" {% if d.doc_type == "paperwork" %}selected{% endif %}>Paperwork</option>
+                      <option value="photo"     {% if d.doc_type == "photo" %}selected{% endif %}>Photo</option>
+                      <option value="warranty"  {% if d.doc_type == "warranty" %}selected{% endif %}>Warranty</option>
+                      <option value="recipe"    {% if d.doc_type == "recipe" %}selected{% endif %}>Recipe / How-to</option>
+                    </select>
+                  </div>
+
+                  <div class="col-12 col-md-4">
+                    <label class="form-label">Photo group (photos only)</label>
+                    <select class="form-select" name="photo_group">
+                      <option value="before" {% if d.photo_group == "before" %}selected{% endif %}>Before</option>
+                      <option value="during" {% if d.photo_group == "during" %}selected{% endif %}>During</option>
+                      <option value="after"  {% if d.photo_group == "after" %}selected{% endif %}>After</option>
+                    </select>
+                  </div>
+
+                  <div class="col-12 col-md-4">
+                    <label class="form-label">Tags</label>
+                    <input class="form-control" name="tags" value="{{ d.tags or '' }}" placeholder="kitchen, plaster, invoice">
+                  </div>
+
+                  <div class="col-12">
+                    <label class="form-label">Title</label>
+                    <input class="form-control" name="title" value="{{ d.title or '' }}">
+                  </div>
+
+                  <div class="col-12">
+                    <label class="form-label">Notes</label>
+                    <textarea class="form-control" name="notes" rows="2">{{ d.notes or '' }}</textarea>
+                  </div>
+
+                  <div class="col-12 col-md-4">
+                    <label class="form-label">Room</label>
+                    <select class="form-select" name="room_id">
+                      <option value="">—</option>
+                      {% for r in rooms %}
+                      <option value="{{ r.id }}" {% if d.room_id == r.id %}selected{% endif %}>{{ r.name }}</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+
+                  <div class="col-12 col-md-4">
+                    <label class="form-label">Tasks (multi)</label>
+                    <select class="form-select" name="task_ids" multiple size="4">
+                      {% for t in tasks %}
+                        {% set selected = false %}
+                        {% if d.tasks %}
+                          {% for dt in d.tasks %}
+                            {% if dt.id == t.id %}{% set selected = true %}{% endif %}
+                          {% endfor %}
+                        {% endif %}
+                        <option value="{{ t.id }}" {% if selected %}selected{% endif %}>{{ t.title }} ({{ t.status }})</option>
+                      {% endfor %}
+                    </select>
+                  </div>
+
+                  <div class="col-12 col-md-4">
+                    <label class="form-label">Expense</label>
+                    <select class="form-select" name="expense_id">
+                      <option value="">—</option>
+                      {% for e in expenses %}
+                      <option value="{{ e.id }}" {% if d.expense_id == e.id %}selected{% endif %}>
+                        {{ e.vendor or "Expense" }} — {{ e.gross_amount }}
+                      </option>
+                      {% endfor %}
+                    </select>
+                  </div>
+
+                  <div class="col-12">
+                    <button class="btn btn-primary" type="submit">Save</button>
+                    <button class="btn btn-outline-secondary" type="button" onclick="toggleEdit('{{ d.id }}')">Cancel</button>
+                  </div>
+
+                </form>
+              </div>
+            </td>
+          </tr>
+
+          {% else %}
+          <tr><td colspan="8" class="text-muted">No documents uploaded yet.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  function toggleEdit(id) {
+    const row = document.getElementById('edit-' + id);
+    if (!row) return;
+    row.style.display = (row.style.display === 'none' || row.style.display === '') ? 'table-row' : 'none';
+  }
+</script>
+
+{% endblock %}

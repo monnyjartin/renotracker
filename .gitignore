@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+
+# Environment / secrets
+.env
+.env.*
+*.key
+*.pem
+
+# Local data / backups (DO NOT COMMIT)
+backups/
+db_data/
+minio_data/
+data/
+uploads/
+
+# Logs
+*.log
+
+# Archives
+*.zip
+
+# Docker / build noise
+.DS_Store
+docker-compose.yml.bak

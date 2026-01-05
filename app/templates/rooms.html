@@ -1,0 +1,50 @@
+{% extends "_layout.html" %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h2 class="mb-1">Rooms</h2>
+    <div class="small-muted">Project: <span class="badge-soft">{{ active_project.name }}</span></div>
+  </div>
+</div>
+
+{% if request.query_params.get('err') == 'duplicate' %}
+  <div class="alert alert-warning">That room already exists in this project.</div>
+{% endif %}
+
+<div class="card p-3 mb-3">
+  <h5 class="mb-2">Add a room</h5>
+  <form class="row g-2" method="post" action="/rooms/create">
+    <div class="col-12 col-md-4">
+      <input class="form-control" name="name" placeholder="Room name (e.g., Kitchen)" required>
+    </div>
+    <div class="col-12 col-md-3">
+      <input class="form-control" name="floor" placeholder="Floor (optional)">
+    </div>
+    <div class="col-12 col-md-3">
+      <input class="form-control" name="status" placeholder="Status (optional)">
+    </div>
+    <div class="col-12 col-md-2 d-grid">
+      <button class="btn btn-primary" type="submit">Add</button>
+    </div>
+  </form>
+</div>
+
+<div class="card p-3">
+  <h5 class="mb-2">Room list</h5>
+  {% if rooms %}
+    <div class="list-group list-group-flush">
+      {% for r in rooms %}
+        <div class="list-group-item bg-transparent d-flex justify-content-between align-items-center">
+          <div>
+            <div class="fw-semibold">{{ r.name }}</div>
+            <div class="small-muted">{% if r.floor %}{{ r.floor }}{% endif %}{% if r.status %} • {{ r.status }}{% endif %}</div>
+          </div>
+          <a class="btn btn-sm btn-outline-primary" href="/expenses?room_id={{ r.id }}">Expenses</a>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="small-muted">No rooms yet.</div>
+  {% endif %}
+</div>
+{% endblock %}

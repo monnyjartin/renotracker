@@ -1,0 +1,11 @@
+fastapi==0.115.5
+uvicorn[standard]==0.30.6
+jinja2==3.1.4
+python-multipart==0.0.9
+sqlalchemy==2.0.35
+psycopg[binary]==3.2.3
+passlib[bcrypt]==1.7.4
+itsdangerous==2.2.0
+starlette==0.41.2
+bcrypt==3.2.2
+boto3==1.35.99

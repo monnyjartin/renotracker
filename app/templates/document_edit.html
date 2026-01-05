@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Edit document</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 0; background: #f6f7f9; }
+    .wrap { max-width: 980px; margin: 28px auto; padding: 0 16px; }
+    .card { background: white; border: 1px solid #e5e7eb; border-radius: 12px; padding: 18px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+    label { display:block; font-size: 12px; color: #475569; margin-bottom: 6px; }
+    input, select, textarea { width: 100%; box-sizing: border-box; padding: 10px 10px; border: 1px solid #d1d5db; border-radius: 10px; background: #fff; }
+    textarea { min-height: 110px; resize: vertical; }
+    .h { display:flex; align-items:center; justify-content:space-between; gap: 10px; margin-bottom: 14px; }
+    .h h1 { font-size: 18px; margin: 0; }
+    .meta { color:#64748b; font-size: 12px; }
+    .btns { display:flex; gap: 10px; justify-content:flex-end; margin-top: 14px; }
+    .btn { border: 1px solid #d1d5db; background:#fff; padding: 10px 12px; border-radius: 10px; cursor:pointer; text-decoration:none; color:#111827; font-size: 14px; }
+    .btn.primary { background:#111827; color:#fff; border-color:#111827; }
+    .btn.danger { background:#fee2e2; border-color:#fecaca; color:#991b1b; }
+    .preview { margin-top: 14px; padding-top: 14px; border-top: 1px solid #e5e7eb; }
+    .preview img { max-width: 100%; border-radius: 10px; border: 1px solid #e5e7eb; }
+    .small { font-size: 12px; color:#64748b; margin-top: 6px; }
+    @media (max-width: 820px) {
+      .row, .row3 { grid-template-columns: 1fr; }
+      .btns { justify-content: stretch; flex-direction: column; }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <div class="h">
+        <div>
+          <h1>Edit document metadata</h1>
+          <div class="meta">
+            {{ doc.original_filename or doc.title }} · {{ doc.created_at }}
+          </div>
+        </div>
+        <a class="btn" href="/documents">Back</a>
+      </div>
+
+      <form method="post" action="/documents/{{ doc.id }}/edit">
+        <div class="row3">
+          <div>
+            <label for="doc_type">Type</label>
+            <select id="doc_type" name="doc_type">
+              {% set t = (doc.doc_type or 'receipt') %}
+              <option value="receipt"   {% if t=='receipt' %}selected{% endif %}>Receipt</option>
+              <option value="photo"     {% if t=='photo' %}selected{% endif %}>Photo</option>
+              <option value="warranty"  {% if t=='warranty' %}selected{% endif %}>Warranty</option>
+              <option value="paperwork" {% if t=='paperwork' %}selected{% endif %}>Paperwork</option>
+              <option value="recipe"    {% if t=='recipe' %}selected{% endif %}>Recipe</option>
+            </select>
+            <div class="small">If “Photo”, you can set Before/During/After.</div>
+          </div>
+
+          <div>
+            <label for="photo_group">Photo group</label>
+            {% set pg = (doc.photo_group or 'before') %}
+            <select id="photo_group" name="photo_group">
+              <option value="before" {% if pg=='before' %}selected{% endif %}>Before</option>
+              <option value="during" {% if pg=='during' %}selected{% endif %}>During</option>
+              <option value="after"  {% if pg=='after' %}selected{% endif %}>After</option>
+            </select>
+          </div>
+
+          <div>
+            <label for="title">Title</label>
+            <input id="title" name="title" value="{{ doc.title or '' }}" placeholder="e.g. Kitchen tiles receipt" />
+          </div>
+        </div>
+
+        <div class="row" style="margin-top: 14px;">
+          <div>
+            <label for="room_id">Room</label>
+            <select id="room_id" name="room_id">
+              <option value="">— None —</option>
+              {% for r in rooms %}
+                <option value="{{ r.id }}" {% if doc.room_id == r.id %}selected{% endif %}>{{ r.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div>
+            <label for="task_id">Task</label>
+            <select id="task_id" name="task_id">
+              <option value="">— None —</option>
+              {% for t in tasks %}
+                <option value="{{ t.id }}" {% if doc.task_id == t.id %}selected{% endif %}>
+                  {{ t.title }}{% if t.status %} ({{ t.status }}){% endif %}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top: 14px;">
+          <div>
+            <label for="expense_id">Expense</label>
+            <select id="expense_id" name="expense_id">
+              <option value="">— None —</option>
+              {% for e in expenses %}
+                <option value="{{ e.id }}" {% if doc.expense_id == e.id %}selected{% endif %}>
+                  {{ e.purchase_date }} · {{ e.description }} · {{ e.gross_amount }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
+
+          <div>
+            <label for="notes">Notes</label>
+            <textarea id="notes" name="notes" placeholder="Any notes for this document...">{{ doc.notes or '' }}</textarea>
+          </div>
+        </div>
+
+        <div class="btns">
+          <a class="btn" href="/documents">Cancel</a>
+
+          <button class="btn primary" type="submit">Save changes</button>
+
+          <form method="post" action="/documents/{{ doc.id }}/delete" style="margin:0;">
+            <button class="btn danger" type="submit" onclick="return confirm('Delete this document? This cannot be undone.');">
+              Delete
+            </button>
+          </form>
+        </div>
+      </form>
+
+      <div class="preview">
+        <div class="meta">Preview</div>
+
+        {% if doc.content_type and ('image' in doc.content_type) %}
+          {% if s3_enabled %}
+            <div class="small">Open/download from Documents page if you want the presigned URL.</div>
+          {% else %}
+            <div class="small">Image preview depends on your storage setup.</div>
+          {% endif %}
+        {% else %}
+          <div class="small">Preview not available for this file type ({{ doc.content_type or 'unknown' }}).</div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Simple UX: disable photo_group when doc_type != photo
+    const docType = document.getElementById("doc_type");
+    const photoGroup = document.getElementById("photo_group");
+
+    function sync() {
+      const isPhoto = (docType.value || "").toLowerCase() === "photo";
+      photoGroup.disabled = !isPhoto;
+      if (!isPhoto) {
+        photoGroup.value = "before";
+      }
+    }
+
+    docType.addEventListener("change", sync);
+    sync();
+  </script>
+</body>
+</html>
