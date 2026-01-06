@@ -24,3 +24,4 @@ uploads/
 # Docker / build noise
 .DS_Store
 docker-compose.yml.bak
+.env
