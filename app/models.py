@@ -80,6 +80,9 @@ class Task(Base):
     created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     completed_at = Column(DateTime, nullable=True)
+    
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)
 
 
 class Expense(Base):

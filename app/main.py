@@ -31,7 +31,9 @@ from .security import verify_password
 from .auth import get_current_user, login_user, logout_user
 from .seed import ensure_admin_user
 from .storage import ensure_bucket_exists, upload_bytes, presigned_get_url, s3_enabled
-
+from fastapi.responses import PlainTextResponse
+import json
+from datetime import timedelta
 
 log = logging.getLogger("renotracker")
 logging.basicConfig(level=logging.INFO)
@@ -39,7 +41,6 @@ logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="RenoTracker v1.2")
 app.add_middleware(SessionMiddleware, secret_key=settings.session_secret)
 
-from fastapi.responses import PlainTextResponse
 
 @app.exception_handler(RuntimeError)
 async def runtime_redirect_handler(request: Request, exc: RuntimeError):
@@ -260,6 +261,27 @@ def ensure_schema() -> None:
             # Patch updated_at defaults so INSERTs succeed even if ORM doesn't include updated_at
             for tbl in ("rooms", "tasks", "expenses", "projects", "documents"):
                 ensure_updated_at_default(tbl)
+                
+            # tasks.start_date
+            res = conn.execute(text("""
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_name='tasks' AND column_name='start_date'
+                LIMIT 1
+            """))
+            if res.first() is None:
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN start_date DATE"))
+
+            # tasks.end_date
+            res = conn.execute(text("""
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_name='tasks' AND column_name='end_date'
+                LIMIT 1
+            """))
+            if res.first() is None:
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN end_date DATE"))
+
 
     except Exception:
         # Do not block startup
@@ -842,11 +864,15 @@ def tasks_create(
     description: str = Form(""),
     room_id: str = Form(""),
     due_date: str = Form(""),
+    start_date: str = Form(""),   # NEW
+    end_date: str = Form(""),     # NEW
     priority: int = Form(3),
 ):
     user = _require_user_and_project(request, db)
 
     dd = date.fromisoformat(due_date) if _clean_str(due_date) else None
+    sd = date.fromisoformat(start_date) if _clean_str(start_date) else None
+    ed = date.fromisoformat(end_date) if _clean_str(end_date) else None
     now = utcnow()
 
     t = Task(
@@ -858,6 +884,8 @@ def tasks_create(
         due_date=dd,
         priority=int(priority),
         status="todo",
+        start_date=sd,   # NEW
+        end_date=ed,     # NEW
     )
     _set_if_attr(t, "created_at", now)
     _set_if_attr(t, "updated_at", now)
@@ -910,8 +938,10 @@ def tasks_update(
     description: str = Form(""),
     room_id: str = Form(""),
     due_date: str = Form(""),
+    start_date: str = Form(""),   # NEW
+    end_date: str = Form(""),     # NEW
     priority: int = Form(3),
-    status: str = Form(""),  # optional, but handy for edits
+    status: str = Form(""),
 ):
     user = _require_user_and_project(request, db)
 
@@ -924,12 +954,16 @@ def tasks_update(
         return _redirect("/tasks?err=missing_title")
 
     dd = date.fromisoformat(due_date) if _clean_str(due_date) else None
+    sd = date.fromisoformat(start_date) if _clean_str(start_date) else None
+    ed = date.fromisoformat(end_date) if _clean_str(end_date) else None
 
     t.title = title_c
     t.description = _clean_str(description) or None
     t.room_id = _clean_str(room_id) or None
-    t.due_date = dd
     t.priority = int(priority)
+    t.due_date = dd
+    t.start_date = sd
+    t.end_date = ed
 
     st = _clean_str(status).lower()
     if st in ("todo", "doing", "blocked", "done"):
@@ -976,6 +1010,83 @@ def tasks_delete(task_id: str, request: Request, db: Session = Depends(get_db)):
         return _redirect("/tasks?err=delete_failed")
 
     return _redirect("/tasks")
+
+
+
+@app.get("/gantt", response_class=HTMLResponse)
+def gantt_view(request: Request, db: Session = Depends(get_db)):
+    user = _require_user_and_project(request, db)
+
+    active_project = db.get(Project, user.active_project_id)
+
+    rooms = (
+        db.query(Room)
+        .filter(Room.project_id == active_project.id)
+        .order_by(Room.name.asc())
+        .all()
+    )
+
+    tasks = (
+        db.query(Task)
+        .filter(Task.project_id == active_project.id)
+        .order_by(Task.created_at.desc())
+        .all()
+    )
+
+    # room lookup map
+    room_map = {r.id: r.name for r in rooms}
+
+    today = date.today()
+    gantt_tasks = []
+
+    for t in tasks:
+        # Prefer explicit plan dates
+        start_date = getattr(t, "start_date", None)
+        end_date = getattr(t, "end_date", None)
+
+        # Fallbacks
+        if not start_date:
+            if getattr(t, "created_at", None):
+                start_date = t.created_at.date()
+            else:
+                start_date = today
+
+        if not end_date:
+            if t.status == "done" and getattr(t, "completed_at", None):
+                end_date = t.completed_at.date()
+            elif getattr(t, "due_date", None):
+                end_date = t.due_date
+            else:
+                end_date = start_date + timedelta(days=1)
+
+        if end_date < start_date:
+            end_date = start_date
+
+        label = t.title
+        if t.room_id and t.room_id in room_map:
+            label = f"[{room_map[t.room_id]}] {label}"
+
+        gantt_tasks.append({
+            "id": t.id,
+            "name": label,
+            "start": start_date.isoformat(),
+            "end": end_date.isoformat(),
+            "progress": 100 if t.status == "done" else 0,
+            "custom_class": f"status-{(t.status or 'todo').lower()}",
+        })
+
+    return templates.TemplateResponse(
+        "gantt.html",
+        {
+            "request": request,
+            "user": user,
+            "active_project": active_project,
+            "title": "Gantt",
+            "gantt_tasks_json": json.dumps(gantt_tasks),
+            "page_layout": "wide",
+        },
+    )
+
 
 
 # ----------------

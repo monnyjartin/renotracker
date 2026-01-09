@@ -1,0 +1,89 @@
+{% extends "_layout.html" %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h2 class="mb-1">Gantt</h2>
+    <div class="small-muted">Project: <span class="badge-soft">{{ active_project.name }}</span></div>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="/tasks">Back to Tasks</a>
+  </div>
+</div>
+
+<!-- Frappe Gantt (CDN) -->
+<link rel="stylesheet" href="https://unpkg.com/frappe-gantt/dist/frappe-gantt.css">
+<script src="https://unpkg.com/frappe-gantt/dist/frappe-gantt.umd.js"></script>
+
+<style>
+  /* Make sure the SVG has room to render */
+  .gantt-wrap {
+    background: #fff;
+    border: 1px solid rgba(0,0,0,.08);
+    border-radius: 14px;
+    padding: 14px;
+    box-shadow: 0 6px 18px rgba(0,0,0,.06);
+  }
+
+  /* Frappe gantt injects an SVG into this element */
+  #gantt {
+    width: 100%;
+    min-height: 420px;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  /* Optional: colour by status via the custom_class you set in main.py */
+  .bar.status-todo { fill-opacity: 0.95; }
+  .bar.status-doing { fill-opacity: 0.95; }
+  .bar.status-blocked { fill-opacity: 0.95; }
+  .bar.status-done { fill-opacity: 0.95; }
+
+  .small-muted { opacity: 0.75; }
+</style>
+
+<div class="gantt-wrap">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <div class="fw-semibold">Task timeline</div>
+
+    <div class="btn-group btn-group-sm" role="group" aria-label="View mode">
+      <button class="btn btn-outline-secondary" type="button" onclick="setViewMode('Day')">Day</button>
+      <button class="btn btn-outline-secondary" type="button" onclick="setViewMode('Week')">Week</button>
+      <button class="btn btn-outline-secondary" type="button" onclick="setViewMode('Month')">Month</button>
+    </div>
+  </div>
+
+  <div id="gantt"></div>
+
+  <div class="small-muted mt-2">
+    Bars prefer Start/End dates. If missing, we fall back to created/due/completed.
+  </div>
+</div>
+
+<script>
+  // IMPORTANT: if you don't use |safe, Jinja will HTML-escape the JSON and the chart will be blank.
+  const tasks = {{ gantt_tasks_json | safe }};
+
+  // If there are no tasks, show a friendly message in the container.
+  if (!tasks || tasks.length === 0) {
+    document.getElementById("gantt").innerHTML =
+      '<div class="small-muted">No tasks to show yet.</div>';
+  } else {
+    // Frappe gantt expects: [{id, name, start, end, progress, custom_class}]
+    const gantt = new Gantt("#gantt", tasks, {
+      view_mode: "Week",
+      date_format: "YYYY-MM-DD",
+      on_click: (task) => {
+        // handy: jump back to tasks page (you can enhance this later to scroll/highlight)
+        // window.location.href = "/tasks";
+        console.log("Clicked:", task);
+      }
+    });
+
+    window.setViewMode = function(mode) {
+      gantt.change_view_mode(mode);
+    };
+  }
+</script>
+
+{% endblock %}

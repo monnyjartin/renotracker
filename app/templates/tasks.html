@@ -29,6 +29,16 @@
       </select>
     </div>
 
+
+    <div class="col-6 col-md-2">
+      <label class="form-label small-muted mb-1">Start date</label>
+      <input class="form-control" type="date" name="start_date">
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label small-muted mb-1">End date</label>
+      <input class="form-control" type="date" name="end_date">
+    </div>
+
     <div class="col-6 col-lg-2">
       <label class="form-label small-muted mb-1">Due date</label>
       <input class="form-control" type="date" name="due_date">
@@ -141,6 +151,17 @@
                           {% endfor %}
                         </select>
                       </div>
+
+                     <div class="col-6">
+                        <label class="form-label small-muted mb-1">Start date</label>
+                        <input class="form-control" type="date" name="start_date" value="{{ t.start_date or '' }}">
+                     </div>
+
+                     <div class="col-6">
+                        <label class="form-label small-muted mb-1">End date</label>
+                        <input class="form-control" type="date" name="end_date" value="{{ t.end_date or '' }}">
+                     </div>
+
 
                       <div class="col-6 col-lg-3">
                         <label class="form-label small-muted mb-1">Due date</label>
