@@ -53,7 +53,11 @@
       <label class="form-label small-muted mb-1">Payment</label>
       <input class="form-control" name="payment_method" placeholder="card/cash">
     </div>
-    <div class="col-12 col-md-6">
+    <div class="col-12 col-md-3">
+      <label class="form-label small-muted mb-1">Vendor</label>
+      <input class="form-control" name="vendor" placeholder="Optional">
+    </div>
+    <div class="col-12 col-md-3">
       <label class="form-label small-muted mb-1">Notes</label>
       <input class="form-control" name="notes" placeholder="Optional">
     </div>
@@ -100,20 +104,139 @@
             <th>Description</th>
             <th>Room</th>
             <th>Task</th>
+            <th>Receipts</th>
             <th class="text-end">Amount</th>
+            <th class="text-end"></th>
           </tr>
         </thead>
         <tbody>
           {% for e in expenses %}
             <tr>
               <td>{{ e.purchase_date }}</td>
+
               <td>
                 <div class="fw-semibold">{{ e.description }}</div>
                 {% if e.notes %}<div class="small-muted">{{ e.notes }}</div>{% endif %}
+                {% if e.vendor %}<div class="small-muted">Vendor: {{ e.vendor }}</div>{% endif %}
               </td>
-              <td>{% if e.room %}{{ e.room.name }}{% else %}<span class="small-muted">—</span>{% endif %}</td>
-              <td>{% if e.task %}{{ e.task.title }}{% else %}<span class="small-muted">—</span>{% endif %}</td>
+
+              <td class="text-muted">
+                {% if e.room_id %}
+                  {% for r in rooms %}{% if e.room_id|string == r.id|string %}{{ r.name }}{% endif %}{% endfor %}
+                {% else %}
+                  <span class="small-muted">—</span>
+                {% endif %}
+              </td>
+
+              <td class="text-muted">
+                {% if e.task_id %}
+                  {% for t in tasks %}{% if e.task_id|string == t.id|string %}{{ t.title }}{% endif %}{% endfor %}
+                {% else %}
+                  <span class="small-muted">—</span>
+                {% endif %}
+              </td>
+
+              <td>
+                {% set docs = docs_by_expense.get(e.id, []) %}
+                {% if docs and docs|length > 0 %}
+                  <div class="small-muted">{{ docs|length }} linked</div>
+                  <div class="mt-1">
+                    {% for d in docs[:2] %}
+                      <a class="badge text-bg-light" href="/documents/{{ d.id }}/preview" target="_blank">Preview</a>
+                    {% endfor %}
+                    {% if docs|length > 2 %}
+                      <span class="small-muted">+{{ docs|length - 2 }} more</span>
+                    {% endif %}
+                  </div>
+                {% else %}
+                  <span class="small-muted">—</span>
+                {% endif %}
+              </td>
+
               <td class="text-end fw-bold">£{{ "%.2f"|format(e.gross_amount) }}</td>
+
+              <td class="text-end">
+                <a class="btn btn-sm btn-outline-primary" href="/documents?expense_id={{ e.id }}">Upload receipt</a>
+                <button class="btn btn-sm btn-outline-secondary" type="button" onclick="toggleEditExp('{{ e.id }}')">Edit</button>
+                <form method="post" action="/expenses/{{ e.id }}/delete" style="display:inline;"
+                      onsubmit="return confirm('Delete this expense? This will NOT delete documents; it will unlink them.');">
+                  <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                </form>
+              </td>
+            </tr>
+
+            <tr id="edit-exp-{{ e.id }}" style="display:none;">
+              <td colspan="7">
+                <div class="border rounded p-3 bg-light">
+                  <form method="post" action="/expenses/{{ e.id }}/update" class="row g-2">
+                    <div class="col-6 col-md-2">
+                      <label class="form-label small-muted mb-1">Date</label>
+                      <input class="form-control" type="date" name="purchase_date" value="{{ e.purchase_date }}" required>
+                    </div>
+
+                    <div class="col-6 col-md-2">
+                      <label class="form-label small-muted mb-1">Amount (£)</label>
+                      <input class="form-control" name="gross_amount" value="{{ "%.2f"|format(e.gross_amount) }}" required>
+                    </div>
+
+                    <div class="col-12 col-md-4">
+                      <label class="form-label small-muted mb-1">Description</label>
+                      <input class="form-control" name="description" value="{{ e.description }}" required>
+                    </div>
+
+                    <div class="col-12 col-md-2">
+                      <label class="form-label small-muted mb-1">Room</label>
+                      <select class="form-select" name="room_id">
+                        <option value="">Unassigned</option>
+                        {% for r in rooms %}
+                          <option value="{{ r.id }}" {% if e.room_id|string == r.id|string %}selected{% endif %}>{{ r.name }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+
+                    <div class="col-12 col-md-2">
+                      <label class="form-label small-muted mb-1">Task</label>
+                      <select class="form-select" name="task_id">
+                        <option value="">Unassigned</option>
+                        {% for t in tasks %}
+                          <option value="{{ t.id }}" {% if e.task_id|string == t.id|string %}selected{% endif %}>{{ t.title }}</option>
+                        {% endfor %}
+                      </select>
+                    </div>
+
+                    <div class="col-6 col-md-2">
+                      <label class="form-label small-muted mb-1">VAT %</label>
+                      <input class="form-control" name="vat_rate" value="{{ e.vat_rate or '' }}">
+                    </div>
+
+                    <div class="col-6 col-md-2">
+                      <label class="form-label small-muted mb-1">VAT amount</label>
+                      <input class="form-control" name="vat_amount" value="{{ e.vat_amount or '' }}">
+                    </div>
+
+                    <div class="col-12 col-md-2">
+                      <label class="form-label small-muted mb-1">Payment</label>
+                      <input class="form-control" name="payment_method" value="{{ e.payment_method or '' }}">
+                    </div>
+
+                    <div class="col-12 col-md-3">
+                      <label class="form-label small-muted mb-1">Vendor</label>
+                      <input class="form-control" name="vendor" value="{{ e.vendor or '' }}">
+                    </div>
+
+                    <div class="col-12 col-md-5">
+                      <label class="form-label small-muted mb-1">Notes</label>
+                      <input class="form-control" name="notes" value="{{ e.notes or '' }}">
+                    </div>
+
+                    <div class="col-12 d-flex gap-2">
+                      <button class="btn btn-primary" type="submit">Save changes</button>
+                      <button class="btn btn-outline-secondary" type="button" onclick="toggleEditExp('{{ e.id }}')">Cancel</button>
+                      <a class="btn btn-outline-primary" href="/documents?expense_id={{ e.id }}">Upload receipt</a>
+                    </div>
+                  </form>
+                </div>
+              </td>
             </tr>
           {% endfor %}
         </tbody>
@@ -124,4 +247,11 @@
   {% endif %}
 </div>
 
+<script>
+  function toggleEditExp(id) {
+    const row = document.getElementById('edit-exp-' + id);
+    if (!row) return;
+    row.style.display = (row.style.display === 'none' || row.style.display === '') ? 'table-row' : 'none';
+  }
+</script>
 {% endblock %}

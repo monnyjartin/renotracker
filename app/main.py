@@ -529,6 +529,23 @@ def expenses_list(request: Request, db: Session = Depends(get_db)):
 
     expenses = q.order_by(Expense.purchase_date.desc(), Expense.created_at.desc()).limit(200).all()
 
+    # Documents linked to expenses (receipt counts + quick preview links)
+    doc_rows = (
+        db.query(Document.id, Document.expense_id, Document.title)
+        .filter(Document.project_id == active_project.id)
+        .filter(Document.expense_id.isnot(None))
+        .order_by(Document.created_at.desc())
+        .all()
+    )
+
+    docs_by_expense = {}
+    for doc_id, exp_id, title in doc_rows:
+        if not exp_id:
+            continue
+        docs_by_expense.setdefault(exp_id, []).append({"id": doc_id, "title": title or "Document"})
+
+
+
     return templates.TemplateResponse(
         "expenses.html",
         {
@@ -542,6 +559,7 @@ def expenses_list(request: Request, db: Session = Depends(get_db)):
             "room_id": room_id,
             "task_id": task_id,
             "err": request.query_params.get("err") or "",
+            "docs_by_expense": docs_by_expense,  # NEW
         },
     )
 
@@ -598,6 +616,86 @@ def expenses_create(
         return _redirect("/expenses?err=save_failed")
 
     return _redirect("/expenses")
+
+@app.post("/expenses/{expense_id}/update")
+def expenses_update(
+    expense_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    purchase_date: str = Form(...),
+    gross_amount: str = Form(...),
+    description: str = Form(...),
+    room_id: str = Form(""),
+    task_id: str = Form(""),
+    vat_rate: str = Form(""),
+    vat_amount: str = Form(""),
+    payment_method: str = Form(""),
+    vendor: str = Form(""),
+    notes: str = Form(""),
+):
+    user = _require_user_and_project(request, db)
+
+    e = db.get(Expense, expense_id)
+    if not e or e.project_id != user.active_project_id:
+        return _redirect("/expenses")
+
+    try:
+        d = date.fromisoformat(purchase_date)
+        gross = Decimal(gross_amount)
+
+        vr = Decimal(vat_rate) if _clean_str(vat_rate) else None
+        va = Decimal(vat_amount) if _clean_str(vat_amount) else None
+        net = (gross - va) if va is not None else None
+
+        e.purchase_date = d
+        e.gross_amount = gross
+        e.description = _clean_str(description)
+        e.room_id = _clean_str(room_id) or None
+        e.task_id = _clean_str(task_id) or None
+
+        e.vat_rate = vr
+        e.vat_amount = va
+        e.net_amount = net
+
+        e.payment_method = _clean_str(payment_method) or None
+        _set_if_attr(e, "vendor", _clean_str(vendor) or None)
+        e.notes = _clean_str(notes) or None
+
+        _set_if_attr(e, "updated_at", utcnow())
+
+        db.commit()
+    except Exception as ex:
+        db.rollback()
+        _log_exception("expenses_update Exception", ex)
+        return _redirect("/expenses?err=save_failed")
+
+    return _redirect("/expenses")
+
+
+@app.post("/expenses/{expense_id}/delete")
+def expenses_delete(expense_id: str, request: Request, db: Session = Depends(get_db)):
+    user = _require_user_and_project(request, db)
+
+    e = db.get(Expense, expense_id)
+    if not e or e.project_id != user.active_project_id:
+        return _redirect("/expenses")
+
+    try:
+        # Unlink documents (so deleting the expense doesn't break anything)
+        db.query(Document).filter(Document.expense_id == e.id).update(
+            {"expense_id": None},
+            synchronize_session=False,
+        )
+
+        db.delete(e)
+        db.commit()
+    except Exception as ex:
+        db.rollback()
+        _log_exception("expenses_delete Exception", ex)
+        return _redirect("/expenses?err=delete_failed")
+
+    return _redirect("/expenses")
+
 
 
 # -----------------
@@ -696,6 +794,8 @@ def tasks_move(
 def documents(request: Request, db: Session = Depends(get_db)):
     user = _require_user_and_project(request, db)
 
+    preselect_expense_id = _clean_str(request.query_params.get("expense_id") or "") or ""
+
     docs = (
         db.query(Document)
         .filter(Document.project_id == user.active_project_id)
@@ -730,6 +830,7 @@ def documents(request: Request, db: Session = Depends(get_db)):
             "doc_task_map": doc_task_map,
             "s3_enabled": s3_enabled(),
             "err": request.query_params.get("err") or "",
+            "preselect_expense_id": preselect_expense_id,  # NEW
         },
     )
 

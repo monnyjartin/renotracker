@@ -209,13 +209,15 @@
                   <div class="col-12 col-md-4">
                     <label class="form-label">Expense</label>
                     <select class="form-select" name="expense_id">
-                      <option value="">—</option>
-                      {% for e in expenses %}
-                      <option value="{{ e.id }}" {% if d.expense_id == e.id %}selected{% endif %}>
-                        {{ e.vendor or "Expense" }} — {{ e.gross_amount }}
-                      </option>
-                      {% endfor %}
-                    </select>
+  <option value="">—</option>
+  {% for e in expenses %}
+    <option value="{{ e.id }}"
+      {% if preselect_expense_id and preselect_expense_id == e.id %}selected{% endif %}>
+      {{ e.vendor or "Expense" }} — {{ e.gross_amount }}
+    </option>
+  {% endfor %}
+</select>
+
                   </div>
 
                   <div class="col-12">
