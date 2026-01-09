@@ -39,6 +39,17 @@ logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="RenoTracker v1.2")
 app.add_middleware(SessionMiddleware, secret_key=settings.session_secret)
 
+from fastapi.responses import PlainTextResponse
+
+@app.exception_handler(RuntimeError)
+async def runtime_redirect_handler(request: Request, exc: RuntimeError):
+    msg = str(exc)
+    if msg.startswith("AUTH_REQUIRED_REDIRECT:"):
+        url = msg.split(":", 1)[1]
+        return _redirect(url)
+    return PlainTextResponse(msg, status_code=500)
+
+
 # Serve /static/styles.css from app/static/styles.css
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 templates = Jinja2Templates(directory="app/templates")
@@ -75,10 +86,15 @@ def _log_exception(prefix: str, ex: Exception) -> None:
 def _require_user_and_project(request: Request, db: Session) -> User:
     user = get_current_user(request, db)
     if not user:
-        raise RedirectResponse(url="/login", status_code=302)
+        # FastAPI can't raise a Response cleanly from deep helpers.
+        # Raise a RuntimeError that our exception handler can convert to a redirect.
+        raise RuntimeError("AUTH_REQUIRED_REDIRECT:/login")
+
     if not user.active_project_id:
-        raise RedirectResponse(url="/projects", status_code=302)
+        raise RuntimeError("AUTH_REQUIRED_REDIRECT:/projects")
+
     return user
+
 
 
 def _norm_doc_type(v: str) -> str:
@@ -756,8 +772,11 @@ def expenses_delete(expense_id: str, request: Request, db: Session = Depends(get
         return _redirect("/expenses")
 
     try:
-        # Unlink documents (so deleting the expense doesn't break anything)
-        db.query(Document).filter(Document.expense_id == e.id).update(
+        # Unlink only documents in THIS project that reference this expense
+        db.query(Document).filter(
+            Document.project_id == user.active_project_id,
+            Document.expense_id == e.id
+        ).update(
             {"expense_id": None},
             synchronize_session=False,
         )
@@ -770,6 +789,7 @@ def expenses_delete(expense_id: str, request: Request, db: Session = Depends(get
         return _redirect("/expenses?err=delete_failed")
 
     return _redirect("/expenses")
+
 
 
 

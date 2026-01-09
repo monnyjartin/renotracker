@@ -1,50 +1,113 @@
 {% extends "_layout.html" %}
 {% block content %}
+
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
     <h2 class="mb-1">Rooms</h2>
     <div class="small-muted">Project: <span class="badge-soft">{{ active_project.name }}</span></div>
+    {% if err %}
+      <div class="text-danger small mt-1">Error: {{ err }}</div>
+    {% endif %}
   </div>
 </div>
 
-{% if request.query_params.get('err') == 'duplicate' %}
-  <div class="alert alert-warning">That room already exists in this project.</div>
-{% endif %}
-
 <div class="card p-3 mb-3">
-  <h5 class="mb-2">Add a room</h5>
-  <form class="row g-2" method="post" action="/rooms/create">
+  <h5 class="mb-2">Add room</h5>
+  <form method="post" action="/rooms/create" class="row g-2">
     <div class="col-12 col-md-4">
-      <input class="form-control" name="name" placeholder="Room name (e.g., Kitchen)" required>
+      <label class="form-label small-muted mb-1">Name</label>
+      <input class="form-control" name="name" placeholder="e.g., Bathroom 1" required>
+    </div>
+    <div class="col-12 col-md-4">
+      <label class="form-label small-muted mb-1">Floor</label>
+      <input class="form-control" name="floor" placeholder="e.g., 1st Floor">
     </div>
     <div class="col-12 col-md-3">
-      <input class="form-control" name="floor" placeholder="Floor (optional)">
+      <label class="form-label small-muted mb-1">Status</label>
+      <input class="form-control" name="status" placeholder="e.g., Planned / In progress">
     </div>
-    <div class="col-12 col-md-3">
-      <input class="form-control" name="status" placeholder="Status (optional)">
-    </div>
-    <div class="col-12 col-md-2 d-grid">
-      <button class="btn btn-primary" type="submit">Add</button>
+    <div class="col-12 col-md-1 d-grid">
+      <label class="form-label small-muted mb-1">&nbsp;</label>
+      <button class="btn btn-primary" type="submit">Save</button>
     </div>
   </form>
 </div>
 
 <div class="card p-3">
-  <h5 class="mb-2">Room list</h5>
+  <h5 class="mb-2">Rooms</h5>
+
   {% if rooms %}
-    <div class="list-group list-group-flush">
-      {% for r in rooms %}
-        <div class="list-group-item bg-transparent d-flex justify-content-between align-items-center">
-          <div>
-            <div class="fw-semibold">{{ r.name }}</div>
-            <div class="small-muted">{% if r.floor %}{{ r.floor }}{% endif %}{% if r.status %} • {{ r.status }}{% endif %}</div>
-          </div>
-          <a class="btn btn-sm btn-outline-primary" href="/expenses?room_id={{ r.id }}">Expenses</a>
-        </div>
-      {% endfor %}
+    <div class="table-responsive">
+      <table class="table align-middle">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Floor</th>
+            <th>Status</th>
+            <th class="text-end"></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in rooms %}
+            <tr>
+              <td class="fw-semibold">{{ r.name }}</td>
+              <td class="text-muted">{{ r.floor or "—" }}</td>
+              <td class="text-muted">{{ r.status or "—" }}</td>
+              <td class="text-end">
+                <button class="btn btn-sm btn-outline-secondary" type="button"
+                        onclick="toggleEditRoom('{{ r.id }}')">Edit</button>
+
+                <form method="post" action="/rooms/{{ r.id }}/delete" style="display:inline;"
+                      onsubmit="return confirm('Delete this room? Tasks/expenses/documents will be unassigned (not deleted).');">
+                  <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                </form>
+              </td>
+            </tr>
+
+            <tr id="edit-room-{{ r.id }}" style="display:none;">
+              <td colspan="4">
+                <div class="border rounded p-3 bg-light">
+                  <form method="post" action="/rooms/{{ r.id }}/update" class="row g-2">
+                    <div class="col-12 col-md-4">
+                      <label class="form-label small-muted mb-1">Name</label>
+                      <input class="form-control" name="name" value="{{ r.name }}" required>
+                    </div>
+                    <div class="col-12 col-md-4">
+                      <label class="form-label small-muted mb-1">Floor</label>
+                      <input class="form-control" name="floor" value="{{ r.floor or '' }}">
+                    </div>
+                    <div class="col-12 col-md-3">
+                      <label class="form-label small-muted mb-1">Status</label>
+                      <input class="form-control" name="status" value="{{ r.status or '' }}">
+                    </div>
+                    <div class="col-12 col-md-1 d-grid">
+                      <label class="form-label small-muted mb-1">&nbsp;</label>
+                      <button class="btn btn-primary" type="submit">Save</button>
+                    </div>
+
+                    <div class="col-12">
+                      <button class="btn btn-outline-secondary" type="button"
+                              onclick="toggleEditRoom('{{ r.id }}')">Cancel</button>
+                    </div>
+                  </form>
+                </div>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
     </div>
   {% else %}
     <div class="small-muted">No rooms yet.</div>
   {% endif %}
 </div>
+
+<script>
+  function toggleEditRoom(id) {
+    const row = document.getElementById('edit-room-' + id);
+    if (!row) return;
+    row.style.display = (row.style.display === 'none' || row.style.display === '') ? 'table-row' : 'none';
+  }
+</script>
+
 {% endblock %}
