@@ -1,91 +1,188 @@
 {% extends "_layout.html" %}
 {% block content %}
+
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
     <h2 class="mb-1">Tasks</h2>
     <div class="small-muted">Project: <span class="badge-soft">{{ active_project.name }}</span></div>
+    {% if err %}
+      <div class="text-danger small mt-1">Error: {{ err }}</div>
+    {% endif %}
   </div>
 </div>
 
 <div class="card p-3 mb-3">
-  <h5 class="mb-2">Add a task</h5>
-  <form method="post" action="/tasks/create" class="row g-2">
-    <div class="col-12 col-md-4">
-      <input class="form-control" name="title" placeholder="Task title (e.g., Fit skirting)" required>
+  <h5 class="mb-2">Add task</h5>
+  <form method="post" action="/tasks/create" class="row g-2 align-items-end">
+    <div class="col-12 col-lg-4">
+      <label class="form-label small-muted mb-1">Title</label>
+      <input class="form-control" name="title" placeholder="e.g., Fit vanity unit" required>
     </div>
-    <div class="col-12 col-md-4">
-      <input class="form-control" name="description" placeholder="Description (optional)">
-    </div>
-    <div class="col-6 col-md-2">
+
+    <div class="col-12 col-lg-3">
+      <label class="form-label small-muted mb-1">Room</label>
       <select class="form-select" name="room_id">
-        <option value="">Room (optional)</option>
+        <option value="">Unassigned</option>
         {% for r in rooms %}
           <option value="{{ r.id }}">{{ r.name }}</option>
         {% endfor %}
       </select>
     </div>
-    <div class="col-3 col-md-1">
-      <input class="form-control" type="date" name="due_date" title="Due date">
+
+    <div class="col-6 col-lg-2">
+      <label class="form-label small-muted mb-1">Due date</label>
+      <input class="form-control" type="date" name="due_date">
     </div>
-    <div class="col-3 col-md-1">
-      <select class="form-select" name="priority" title="Priority">
-        <option value="1">P1</option>
-        <option value="2">P2</option>
-        <option value="3" selected>P3</option>
-        <option value="4">P4</option>
-        <option value="5">P5</option>
-      </select>
+
+    <div class="col-6 col-lg-1">
+      <label class="form-label small-muted mb-1">Priority</label>
+      <input class="form-control" type="number" name="priority" value="3" min="1" max="5">
     </div>
-    <div class="col-12 d-grid">
-      <button class="btn btn-primary" type="submit">Create task</button>
+
+    <div class="col-12 col-lg-2 d-grid">
+      <button class="btn btn-primary" type="submit">Save</button>
+    </div>
+
+    <div class="col-12">
+      <label class="form-label small-muted mb-1">Description</label>
+      <input class="form-control" name="description" placeholder="Optional">
     </div>
   </form>
 </div>
 
-<div class="board">
-  {% for col, items in cols.items() %}
-    <div class="board-col">
-      <div class="d-flex align-items-center justify-content-between mb-2">
-        <h5 class="mb-0 text-capitalize">{{ col }}</h5>
-        <span class="badge-soft">{{ items|length }}</span>
-      </div>
-
-      {% for t in items %}
-        <div class="task">
-          <h6>{{ t.title }}</h6>
-          <div class="small-muted">
-            {% if t.room %}{{ t.room.name }}{% endif %}
-            {% if t.due_date %}{% if t.room %} • {% endif %}Due {{ t.due_date }}{% endif %}
-            • P{{ t.priority }}
-          </div>
-          {% if t.description %}<div class="small-muted mt-1">{{ t.description }}</div>{% endif %}
-
-          <div class="mt-2 d-flex gap-2 flex-wrap">
-            <form method="post" action="/tasks/{{ t.id }}/move">
-              <input type="hidden" name="status" value="todo">
-              <button class="btn btn-sm btn-outline-secondary" type="submit">To do</button>
-            </form>
-            <form method="post" action="/tasks/{{ t.id }}/move">
-              <input type="hidden" name="status" value="doing">
-              <button class="btn btn-sm btn-outline-secondary" type="submit">Doing</button>
-            </form>
-            <form method="post" action="/tasks/{{ t.id }}/move">
-              <input type="hidden" name="status" value="blocked">
-              <button class="btn btn-sm btn-outline-secondary" type="submit">Blocked</button>
-            </form>
-            <form method="post" action="/tasks/{{ t.id }}/move">
-              <input type="hidden" name="status" value="done">
-              <button class="btn btn-sm btn-outline-success" type="submit">Done</button>
-            </form>
-            <a class="btn btn-sm btn-outline-primary" href="/expenses?task_id={{ t.id }}">View expenses</a>
-          </div>
+<div class="row g-3">
+  {% for col_name, col_tasks in cols.items() %}
+    <div class="col-12 col-md-6 col-xl-3">
+      <div class="card p-3 h-100">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div class="fw-semibold text-capitalize">{{ col_name }}</div>
+          <div class="small-muted">{{ col_tasks|length }}</div>
         </div>
-      {% endfor %}
 
-      {% if items|length == 0 %}
-        <div class="small-muted">No tasks.</div>
-      {% endif %}
+        {% if col_tasks %}
+          <div class="d-grid gap-2">
+            {% for t in col_tasks %}
+              <div class="border rounded p-2">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                  <div class="me-2">
+                    <div class="fw-semibold">{{ t.title }}</div>
+                    <div class="small-muted">
+                      {% if t.room_id %}
+                        {% for r in rooms %}{% if r.id == t.room_id %}{{ r.name }}{% endif %}{% endfor %}
+                      {% else %}
+                        —
+                      {% endif %}
+                      {% if t.due_date %} • Due {{ t.due_date }}{% endif %}
+                      • P{{ t.priority }}
+                    </div>
+                  </div>
+
+                  <div class="d-flex gap-1 flex-shrink-0">
+                    <button
+                      class="btn btn-sm btn-outline-secondary"
+                      type="button"
+                      data-bs-toggle="collapse"
+                      data-bs-target="#edit-task-{{ t.id }}"
+                      aria-expanded="false"
+                      aria-controls="edit-task-{{ t.id }}">
+                      Edit
+                    </button>
+
+                    <form method="post" action="/tasks/{{ t.id }}/delete" style="display:inline;"
+                          onsubmit="return confirm('Delete this task? Linked documents will be unlinked, expenses will be unassigned.');">
+                      <button class="btn btn-sm btn-outline-danger" type="submit">Del</button>
+                    </form>
+                  </div>
+                </div>
+
+                {% if t.description %}
+                  <div class="small mt-2">{{ t.description }}</div>
+                {% endif %}
+
+                <div class="d-flex flex-wrap gap-2 mt-2">
+                  <form method="post" action="/tasks/{{ t.id }}/move">
+                    <input type="hidden" name="status" value="todo">
+                    <button class="btn btn-sm btn-outline-primary" type="submit">To do</button>
+                  </form>
+                  <form method="post" action="/tasks/{{ t.id }}/move">
+                    <input type="hidden" name="status" value="doing">
+                    <button class="btn btn-sm btn-outline-primary" type="submit">Doing</button>
+                  </form>
+                  <form method="post" action="/tasks/{{ t.id }}/move">
+                    <input type="hidden" name="status" value="blocked">
+                    <button class="btn btn-sm btn-outline-primary" type="submit">Blocked</button>
+                  </form>
+                  <form method="post" action="/tasks/{{ t.id }}/move">
+                    <input type="hidden" name="status" value="done">
+                    <button class="btn btn-sm btn-outline-primary" type="submit">Done</button>
+                  </form>
+                </div>
+
+                <!-- Inline editor -->
+                <div id="edit-task-{{ t.id }}" class="collapse mt-3">
+                  <div class="border rounded p-2 bg-light">
+                    <form method="post" action="/tasks/{{ t.id }}/update" class="row g-2">
+                      <div class="col-12">
+                        <label class="form-label small-muted mb-1">Title</label>
+                        <input class="form-control form-control-sm" name="title" value="{{ t.title }}" required>
+                      </div>
+
+                      <div class="col-12">
+                        <label class="form-label small-muted mb-1">Description</label>
+                        <input class="form-control form-control-sm" name="description" value="{{ t.description or '' }}">
+                      </div>
+
+                      <div class="col-12 col-lg-6">
+                        <label class="form-label small-muted mb-1">Room</label>
+                        <select class="form-select form-select-sm" name="room_id">
+                          <option value="">Unassigned</option>
+                          {% for r in rooms %}
+                            <option value="{{ r.id }}" {% if t.room_id == r.id %}selected{% endif %}>{{ r.name }}</option>
+                          {% endfor %}
+                        </select>
+                      </div>
+
+                      <div class="col-6 col-lg-3">
+                        <label class="form-label small-muted mb-1">Due date</label>
+                        <input class="form-control form-control-sm" type="date" name="due_date" value="{{ t.due_date or '' }}">
+                      </div>
+
+                      <div class="col-6 col-lg-3">
+                        <label class="form-label small-muted mb-1">Priority</label>
+                        <input class="form-control form-control-sm" type="number" name="priority" value="{{ t.priority }}" min="1" max="5">
+                      </div>
+
+                      <div class="col-12 col-lg-6">
+                        <label class="form-label small-muted mb-1">Status</label>
+                        <select class="form-select form-select-sm" name="status">
+                          <option value="todo" {% if t.status=="todo" %}selected{% endif %}>todo</option>
+                          <option value="doing" {% if t.status=="doing" %}selected{% endif %}>doing</option>
+                          <option value="blocked" {% if t.status=="blocked" %}selected{% endif %}>blocked</option>
+                          <option value="done" {% if t.status=="done" %}selected{% endif %}>done</option>
+                        </select>
+                      </div>
+
+                      <div class="col-12 d-flex gap-2">
+                        <button class="btn btn-primary btn-sm" type="submit">Save</button>
+                        <button class="btn btn-outline-secondary btn-sm" type="button"
+                                data-bs-toggle="collapse"
+                                data-bs-target="#edit-task-{{ t.id }}">
+                          Cancel
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+
+              </div>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="small-muted">No tasks.</div>
+        {% endif %}
+      </div>
     </div>
   {% endfor %}
 </div>
+
 {% endblock %}

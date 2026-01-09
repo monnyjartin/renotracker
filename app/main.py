@@ -506,6 +506,81 @@ def rooms_create(
 
     return _redirect("/rooms")
 
+@app.post("/rooms/{room_id}/update")
+def rooms_update(
+    room_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    name: str = Form(...),
+    floor: str = Form(""),
+    status: str = Form(""),
+):
+    user = _require_user_and_project(request, db)
+
+    r = db.get(Room, room_id)
+    if not r or r.project_id != user.active_project_id:
+        return _redirect("/rooms")
+
+    room_name = _clean_str(name)
+    if not room_name:
+        return _redirect("/rooms?err=missing_name")
+
+    # Enforce unique room name per project (case-insensitive), excluding this room
+    dup = (
+        db.query(Room.id)
+        .filter(Room.project_id == user.active_project_id)
+        .filter(func.lower(Room.name) == room_name.lower())
+        .filter(Room.id != r.id)
+        .first()
+    )
+    if dup:
+        return _redirect("/rooms?err=duplicate")
+
+    r.name = room_name
+    r.floor = _clean_str(floor) or None
+    r.status = _clean_str(status) or None
+    _set_if_attr(r, "updated_at", utcnow())
+
+    try:
+        db.commit()
+    except Exception as ex:
+        db.rollback()
+        _log_exception("rooms_update Exception", ex)
+        return _redirect("/rooms?err=save_failed")
+
+    return _redirect("/rooms")
+
+
+@app.post("/rooms/{room_id}/delete")
+def rooms_delete(room_id: str, request: Request, db: Session = Depends(get_db)):
+    user = _require_user_and_project(request, db)
+
+    r = db.get(Room, room_id)
+    if not r or r.project_id != user.active_project_id:
+        return _redirect("/rooms")
+
+    # Safe: unlink tasks/expenses/documents that reference this room
+    db.query(Task).filter(Task.project_id == user.active_project_id, Task.room_id == r.id).update(
+        {"room_id": None}, synchronize_session=False
+    )
+    db.query(Expense).filter(Expense.project_id == user.active_project_id, Expense.room_id == r.id).update(
+        {"room_id": None}, synchronize_session=False
+    )
+    db.query(Document).filter(Document.project_id == user.active_project_id, Document.room_id == r.id).update(
+        {"room_id": None}, synchronize_session=False
+    )
+
+    db.delete(r)
+    try:
+        db.commit()
+    except Exception as ex:
+        db.rollback()
+        _log_exception("rooms_delete Exception", ex)
+        return _redirect("/rooms?err=delete_failed")
+
+    return _redirect("/rooms")
+
+
 
 # -----------------
 # Expenses
@@ -706,17 +781,37 @@ def tasks_board(request: Request, db: Session = Depends(get_db)):
     user = _require_user_and_project(request, db)
 
     active_project = db.get(Project, user.active_project_id)
-    rooms = db.query(Room).filter(Room.project_id == active_project.id).order_by(Room.name.asc()).all()
+    rooms = (
+        db.query(Room)
+        .filter(Room.project_id == active_project.id)
+        .order_by(Room.name.asc())
+        .all()
+    )
 
-    tasks = db.query(Task).filter(Task.project_id == active_project.id).order_by(Task.created_at.desc()).all()
+    tasks = (
+        db.query(Task)
+        .filter(Task.project_id == active_project.id)
+        .order_by(Task.created_at.desc())
+        .all()
+    )
+
     cols = {"todo": [], "doing": [], "blocked": [], "done": []}
     for t in tasks:
         cols.setdefault(t.status, cols["todo"]).append(t)
 
     return templates.TemplateResponse(
         "tasks.html",
-        {"request": request, "user": user, "active_project": active_project, "rooms": rooms, "cols": cols, "err": request.query_params.get("err") or ""},
+        {
+            "request": request,
+            "user": user,
+            "active_project": active_project,
+            "rooms": rooms,
+            "cols": cols,
+            "err": request.query_params.get("err") or "",
+            "page_layout": "wide",  # optional (only matters if your layout uses it)
+        },
     )
+
 
 
 @app.post("/tasks/create")
@@ -784,6 +879,82 @@ def tasks_move(
     _set_if_attr(t, "updated_at", utcnow())
 
     db.commit()
+    return _redirect("/tasks")
+
+@app.post("/tasks/{task_id}/update")
+def tasks_update(
+    task_id: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    title: str = Form(...),
+    description: str = Form(""),
+    room_id: str = Form(""),
+    due_date: str = Form(""),
+    priority: int = Form(3),
+    status: str = Form(""),  # optional, but handy for edits
+):
+    user = _require_user_and_project(request, db)
+
+    t = db.get(Task, task_id)
+    if not t or t.project_id != user.active_project_id:
+        return _redirect("/tasks")
+
+    title_c = _clean_str(title)
+    if not title_c:
+        return _redirect("/tasks?err=missing_title")
+
+    dd = date.fromisoformat(due_date) if _clean_str(due_date) else None
+
+    t.title = title_c
+    t.description = _clean_str(description) or None
+    t.room_id = _clean_str(room_id) or None
+    t.due_date = dd
+    t.priority = int(priority)
+
+    st = _clean_str(status).lower()
+    if st in ("todo", "doing", "blocked", "done"):
+        t.status = st
+        if st == "done" and not t.completed_at:
+            t.completed_at = utcnow()
+        if st != "done":
+            t.completed_at = None
+
+    _set_if_attr(t, "updated_at", utcnow())
+
+    try:
+        db.commit()
+    except Exception as ex:
+        db.rollback()
+        _log_exception("tasks_update Exception", ex)
+        return _redirect("/tasks?err=save_failed")
+
+    return _redirect("/tasks")
+
+
+@app.post("/tasks/{task_id}/delete")
+def tasks_delete(task_id: str, request: Request, db: Session = Depends(get_db)):
+    user = _require_user_and_project(request, db)
+
+    t = db.get(Task, task_id)
+    if not t or t.project_id != user.active_project_id:
+        return _redirect("/tasks")
+
+    # Unlink documents via join table
+    db.query(DocumentTask).filter(DocumentTask.task_id == t.id).delete(synchronize_session=False)
+
+    # Unlink expenses
+    db.query(Expense).filter(Expense.project_id == user.active_project_id, Expense.task_id == t.id).update(
+        {"task_id": None}, synchronize_session=False
+    )
+
+    db.delete(t)
+    try:
+        db.commit()
+    except Exception as ex:
+        db.rollback()
+        _log_exception("tasks_delete Exception", ex)
+        return _redirect("/tasks?err=delete_failed")
+
     return _redirect("/tasks")
 
 
