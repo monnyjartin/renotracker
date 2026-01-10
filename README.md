@@ -1,37 +1,83 @@
-# RenoTracker v1 (MVP)
+# RenoTracker v1.3
 
-This is a Dockerised FastAPI + Postgres + MinIO starter app for tracking renovation projects.
-V1 slice includes:
-- Login (bootstrap user)
-- Projects (create + set active)
-- Rooms (create + list)
-- Tasks (simple kanban)
-- Expenses (quick add + list + filter by room/task)
+RenoTracker is a self-hosted renovation tracking system built with **FastAPI + Postgres + MinIO**, designed for real-world home renovation projects.
 
-## Quick start (dadserver)
+It tracks **tasks, timelines (Gantt), expenses, documents, rooms, and dependencies** — all running in Docker.
 
-1) Copy this folder to your server.
+---
 
-2) Edit `docker-compose.yml`:
-- Change Postgres password (`POSTGRES_PASSWORD`)
-- Change `SESSION_SECRET`
-- Change MinIO credentials
+## Features (Current)
 
-3) Start:
+### Core
+- User login (bootstrap admin user)
+- Projects
+  - Create projects
+  - Set active project
+- Rooms
+  - Create / edit / delete
+  - Enforced unique room names per project
+
+### Tasks
+- Kanban board (Todo / Doing / Blocked / Done)
+- Inline task editing
+- Start date / End date planning
+- Due dates
+- Priority (P1–P5)
+- Progress tracking (0–100%)
+- Automatic status sync:
+  - 0% → Todo
+  - 1–99% → Doing
+  - 100% → Done (sets completed_at)
+- Task dependencies (Finish-to-Start)
+- Gantt chart view
+  - Visual timeline
+  - Progress bars inside tasks
+  - Dependency links
+  - Drag / resize / progress updates persisted to DB
+
+### Expenses
+- Add / edit / delete expenses
+- VAT, net, gross tracking
+- Link expenses to:
+  - Rooms
+  - Tasks
+- Vendor tracking
+- Attach documents (receipts)
+
+### Documents (MinIO)
+- Upload files (receipts, photos, paperwork, warranties)
+- Link documents to:
+  - Tasks (many-to-many)
+  - Expenses
+  - Rooms
+- Photo grouping (before / during / after)
+- Tags
+- Secure presigned download & preview URLs
+
+### Dashboard
+- Total spend
+- Current month spend
+- Open task count
+- Recent expenses
+- Room overview
+
+---
+
+## Architecture
+
+- **FastAPI** (Python 3.12)
+- **PostgreSQL** (primary datastore)
+- **MinIO** (S3-compatible object storage)
+- **Docker Compose** (single-host deployment)
+- **SQLAlchemy ORM**
+- **No Alembic** (schema auto-patching on startup)
+
+---
+
+## Quick Start (dadserver)
+
+### 1️⃣ Clone / copy repo
 ```bash
-docker compose up -d --build
-```
-
-4) Open:
-- App: http://<dadserver-ip>:8080
-- MinIO console: http://<dadserver-ip>:9001
-
-## Default login
-- Email: admin@local
-- Password: admin
-
-Change this in V2 when we add user management.
-
-## Notes
-- Tables are created automatically at startup (no Alembic yet).
-- MinIO is configured but not used until the Documents/Uploads slice.
+cd ~/apps
+git clone <your-repo-url> renotracker_v1_1
+cd renotracker_v1_1
