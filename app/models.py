@@ -10,6 +10,7 @@ from sqlalchemy import (
     Numeric,
     Text,
     UniqueConstraint,
+    CheckConstraint,
 )
 from sqlalchemy.orm import relationship
 
@@ -74,15 +75,23 @@ class Task(Base):
     title = Column(String, nullable=False)
     description = Column(Text, nullable=True)
     due_date = Column(Date, nullable=True)
-    priority = Column(Integer, default=3)
-    status = Column(String, default="todo")  # todo/doing/blocked/done
+    priority = Column(Integer, default=3, nullable=False)
+    status = Column(String, default="todo", nullable=False)  # todo/doing/blocked/done
 
     created_at = Column(DateTime, default=utcnow, nullable=False)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
     completed_at = Column(DateTime, nullable=True)
-    
+
     start_date = Column(Date, nullable=True)
     end_date = Column(Date, nullable=True)
+
+    # Progress & dependencies
+    progress = Column(Integer, default=0, nullable=False)  # 0..100
+    depends_on = Column(Text, nullable=True)              # CSV of task IDs
+
+    __table_args__ = (
+        CheckConstraint("progress >= 0 AND progress <= 100", name="ck_tasks_progress_0_100"),
+    )
 
 
 class Expense(Base):
@@ -105,7 +114,7 @@ class Expense(Base):
     vendor = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
 
-    # FIX: DB has NOT NULL is_refund
+    # DB has NOT NULL is_refund
     is_refund = Column(Boolean, default=False, nullable=False)
 
     created_at = Column(DateTime, default=utcnow, nullable=False)

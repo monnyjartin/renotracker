@@ -29,11 +29,11 @@
       </select>
     </div>
 
-
     <div class="col-6 col-md-2">
       <label class="form-label small-muted mb-1">Start date</label>
       <input class="form-control" type="date" name="start_date">
     </div>
+
     <div class="col-6 col-md-2">
       <label class="form-label small-muted mb-1">End date</label>
       <input class="form-control" type="date" name="end_date">
@@ -72,7 +72,8 @@
         {% if col_tasks %}
           <div class="d-grid gap-2">
             {% for t in col_tasks %}
-              <div class="border rounded p-2">
+              {% set is_open = (request.query_params.get('open') == t.id) %}
+              <div class="border rounded p-2" id="task-{{ t.id }}">
                 <div class="d-flex justify-content-between align-items-start gap-2">
                   <div class="me-2">
                     <div class="fw-semibold">{{ t.title }}</div>
@@ -93,7 +94,7 @@
                       type="button"
                       data-bs-toggle="collapse"
                       data-bs-target="#edit-task-{{ t.id }}"
-                      aria-expanded="false"
+                      aria-expanded="{{ 'true' if is_open else 'false' }}"
                       aria-controls="edit-task-{{ t.id }}">
                       Edit
                     </button>
@@ -129,7 +130,7 @@
                 </div>
 
                 <!-- Inline editor -->
-                <div id="edit-task-{{ t.id }}" class="collapse mt-3">
+                <div id="edit-task-{{ t.id }}" class="collapse mt-3 {% if is_open %}show{% endif %}">
                   <div class="border rounded p-2 bg-light">
                     <form method="post" action="/tasks/{{ t.id }}/update" class="row g-2">
                       <div class="col-12">
@@ -152,16 +153,15 @@
                         </select>
                       </div>
 
-                     <div class="col-6">
+                      <div class="col-6">
                         <label class="form-label small-muted mb-1">Start date</label>
-                        <input class="form-control" type="date" name="start_date" value="{{ t.start_date or '' }}">
-                     </div>
+                        <input class="form-control form-control-sm" type="date" name="start_date" value="{{ t.start_date or '' }}">
+                      </div>
 
-                     <div class="col-6">
+                      <div class="col-6">
                         <label class="form-label small-muted mb-1">End date</label>
-                        <input class="form-control" type="date" name="end_date" value="{{ t.end_date or '' }}">
-                     </div>
-
+                        <input class="form-control form-control-sm" type="date" name="end_date" value="{{ t.end_date or '' }}">
+                      </div>
 
                       <div class="col-6 col-lg-3">
                         <label class="form-label small-muted mb-1">Due date</label>
@@ -172,6 +172,33 @@
                         <label class="form-label small-muted mb-1">Priority</label>
                         <input class="form-control form-control-sm" type="number" name="priority" value="{{ t.priority }}" min="1" max="5">
                       </div>
+
+
+<div class="col-6 col-lg-3">
+  <label class="form-label small-muted mb-1">Progress (%)</label>
+  <input class="form-control form-control-sm" type="number" name="progress" min="0" max="100" value="{{ t.progress or 0 }}">
+</div>
+
+<div class="col-12">
+  <label class="form-label small-muted mb-1">Depends on (task IDs CSV)</label>
+  <input class="form-control form-control-sm" name="depends_on" value="{{ t.depends_on or '' }}" placeholder="e.g. 3f2a..., 9c1b...">
+</div>
+
+                      <div class="col-12">
+  <label class="form-label small-muted mb-1">
+    Progress: <span id="prog-val-{{ t.id }}">{{ t.progress or 0 }}%</span>
+  </label>
+  <input
+    type="range"
+    class="form-range"
+    min="0"
+    max="100"
+    step="5"
+    name="progress"
+    value="{{ t.progress or 0 }}"
+    oninput="document.getElementById('prog-val-{{ t.id }}').innerText = this.value + '%'"
+  >
+</div>
 
                       <div class="col-12 col-lg-6">
                         <label class="form-label small-muted mb-1">Status</label>
