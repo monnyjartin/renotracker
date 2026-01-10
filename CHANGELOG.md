@@ -29,3 +29,13 @@
 - Safe JSON rendering for Gantt data to prevent template escaping issues
 - No breaking database changes (backwards compatible)
 - Schema auto-patching extended for task planning fields
+
+## [v1.3] - 2026-01-10
+
+### Fixed
+- Fixed task update crashing with “Internal Server Error” when saving, caused by missing `depends_on` form binding.
+- Task edit now correctly persists `progress` (0–100) and `depends_on` values.
+
+### Added
+- Task fields: `progress` (0–100) and `depends_on` (CSV of task IDs) supported end-to-end.
+- Gantt view now uses stored task progress (falls back to 0/100 based on status).
