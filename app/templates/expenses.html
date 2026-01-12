@@ -140,10 +140,22 @@
                 {% set docs = docs_by_expense.get(e.id, []) %}
                 {% if docs and docs|length > 0 %}
                   <div class="small-muted">{{ docs|length }} linked</div>
-                  <div class="mt-1">
+
+                  <div class="mt-1 d-flex flex-wrap gap-1">
                     {% for d in docs[:2] %}
-                      <a class="badge text-bg-light" href="/documents/{{ d.id }}/preview" target="_blank">Preview</a>
+                      {# docs are dicts like {"id": "...", "title": "..."} #}
+                      <a class="badge text-bg-light text-decoration-none"
+                         href="/documents/{{ d['id'] }}/preview" target="_blank"
+                         title="{{ d.get('title','Document') }}">
+                        Preview
+                      </a>
+                      <a class="badge text-bg-light text-decoration-none"
+                         href="/documents/{{ d['id'] }}/download"
+                         title="{{ d.get('title','Document') }}">
+                        Download
+                      </a>
                     {% endfor %}
+
                     {% if docs|length > 2 %}
                       <span class="small-muted">+{{ docs|length - 2 }} more</span>
                     {% endif %}

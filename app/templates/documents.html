@@ -1,250 +1,247 @@
 {% extends "_layout.html" %}
 {% block content %}
-<h1 class="h3 mb-3">Documents</h1>
 
-{% if not s3_enabled %}
-<div class="alert alert-warning">
-  MinIO is not configured. Check MINIO_ENDPOINT / MINIO_ACCESS_KEY / MINIO_SECRET_KEY / MINIO_BUCKET in docker-compose.yml.
-</div>
-{% endif %}
-
-<div class="card mb-4">
-  <div class="card-body">
-    <form method="post" action="/documents/upload" enctype="multipart/form-data" class="row g-3">
-      <div class="col-12 col-md-6">
-        <label class="form-label">File</label>
-        <input class="form-control" type="file" name="file" required>
-      </div>
-
-      <div class="col-12 col-md-6">
-        <label class="form-label">Type</label>
-        <select class="form-select" name="doc_type">
-          <option value="receipt">Receipt</option>
-          <option value="paperwork">Paperwork</option>
-          <option value="photo">Photo</option>
-          <option value="warranty">Warranty</option>
-          <option value="recipe">Recipe / How-to</option>
-        </select>
-      </div>
-
-      <div class="col-12 col-md-6">
-        <label class="form-label">Photo group (photos only)</label>
-        <select class="form-select" name="photo_group">
-          <option value="before">Before</option>
-          <option value="during">During</option>
-          <option value="after">After</option>
-        </select>
-      </div>
-
-      <div class="col-12 col-md-6">
-        <label class="form-label">Tags (comma-separated)</label>
-        <input class="form-control" name="tags" placeholder="e.g. kitchen, plaster, invoice">
-      </div>
-
-      <div class="col-12">
-        <label class="form-label">Title</label>
-        <input class="form-control" name="title" placeholder="e.g. Kitchen invoice / Building work invoice / Before plastering photo">
-      </div>
-
-      <div class="col-12">
-        <label class="form-label">Notes</label>
-        <textarea class="form-control" name="notes" rows="2" placeholder="Optional notes"></textarea>
-      </div>
-
-      <div class="col-12 col-md-4">
-        <label class="form-label">Room (optional)</label>
-        <select class="form-select" name="room_id">
-          <option value="">—</option>
-          {% for r in rooms %}
-          <option value="{{ r.id }}">{{ r.name }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <div class="col-12 col-md-4">
-        <label class="form-label">Tasks (optional)</label>
-        <select class="form-select" name="task_ids" multiple size="4">
-          {% for t in tasks %}
-          <option value="{{ t.id }}">{{ t.title }} ({{ t.status }})</option>
-          {% endfor %}
-        </select>
-        <div class="form-text">Hold Ctrl (Windows) to select multiple.</div>
-      </div>
-
-      <div class="col-12 col-md-4">
-        <label class="form-label">Expense (optional)</label>
-        <select class="form-select" name="expense_id">
-          <option value="">—</option>
-          {% for e in expenses %}
-          <option value="{{ e.id }}">{{ e.vendor or "Expense" }} — {{ e.gross_amount }}</option>
-          {% endfor %}
-        </select>
-      </div>
-
-      <div class="col-12">
-        <button class="btn btn-primary" type="submit" {% if not s3_enabled %}disabled{% endif %}>Upload</button>
-      </div>
-    </form>
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <div>
+    <h2 class="mb-1">Documents</h2>
+    {% if err %}
+      <div class="text-danger small mt-1">Error: {{ err }}</div>
+    {% endif %}
   </div>
 </div>
 
-<div class="card">
-  <div class="card-body">
-    <div class="table-responsive">
-      <table class="table table-sm align-middle">
-        <thead>
-          <tr>
-            <th>Type</th>
-            <th>Title</th>
-            <th>Tags</th>
-            <th>Room</th>
-            <th>Tasks</th>
-            <th>Original file</th>
-            <th>Created</th>
-            <th class="text-end"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for d in docs %}
-          <tr>
-            <td><span class="badge text-bg-light">{{ d.doc_type }}</span></td>
-            <td>{{ d.title }}</td>
-            <td class="text-muted">{{ d.tags or "" }}</td>
+<div class="card p-3 mb-3">
+  <h5 class="mb-2">Upload document</h5>
 
-            <td class="text-muted">
-              {% if d.room_id %}
-                {% for r in rooms %}{% if r.id == d.room_id %}{{ r.name }}{% endif %}{% endfor %}
+  {% if not s3_enabled %}
+    <div class="alert alert-warning py-2 mb-2">
+      S3/MinIO is not enabled. Uploads may fail until storage is configured.
+    </div>
+  {% endif %}
+
+  <form method="post" action="/documents/upload" enctype="multipart/form-data" class="row g-2 align-items-end">
+    <div class="col-12 col-lg-4">
+      <label class="form-label small-muted mb-1">File</label>
+      <input class="form-control" type="file" name="file" required>
+    </div>
+
+    <div class="col-6 col-lg-2">
+      <label class="form-label small-muted mb-1">Type</label>
+      <select class="form-select" name="doc_type">
+        <option value="receipt">receipt</option>
+        <option value="photo">photo</option>
+        <option value="warranty">warranty</option>
+        <option value="paperwork">paperwork</option>
+        <option value="recipe">recipe</option>
+      </select>
+    </div>
+
+    <div class="col-6 col-lg-2">
+      <label class="form-label small-muted mb-1">Photo group</label>
+      <select class="form-select" name="photo_group">
+        <option value="before">before</option>
+        <option value="during">during</option>
+        <option value="after">after</option>
+      </select>
+      <div class="form-text">Only used for type “photo”.</div>
+    </div>
+
+    <div class="col-12 col-lg-4">
+      <label class="form-label small-muted mb-1">Title</label>
+      <input class="form-control" name="title" placeholder="Optional">
+    </div>
+
+    <div class="col-12 col-lg-4">
+      <label class="form-label small-muted mb-1">Room</label>
+      <select class="form-select" name="room_id">
+        <option value="">Unassigned</option>
+        {% for r in rooms %}
+          <option value="{{ r.id }}">{{ r.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="col-12 col-lg-4">
+      <label class="form-label small-muted mb-1">Tags</label>
+      <input class="form-control" name="tags" placeholder="Comma separated e.g. tiles,kitchen,b&q">
+    </div>
+
+    <div class="col-12 col-lg-4">
+      <label class="form-label small-muted mb-1">Notes</label>
+      <input class="form-control" name="notes" placeholder="Optional">
+    </div>
+
+    <div class="col-12 col-lg-6">
+      <label class="form-label small-muted mb-1">Link to tasks</label>
+      <select class="form-select" name="task_ids" multiple size="6">
+        {% for t in tasks %}
+          <option value="{{ t.id }}">{{ t.title }}</option>
+        {% endfor %}
+      </select>
+      <div class="form-text">Hold Ctrl/Cmd to select multiple.</div>
+    </div>
+
+    <div class="col-12 col-lg-6">
+      <label class="form-label small-muted mb-1">Link to expenses</label>
+      <select class="form-select" name="expense_ids" multiple size="6">
+        {% for e in expenses %}
+          <option value="{{ e.id }}"
+            {% if preselect_expense_id and e.id == preselect_expense_id %}selected{% endif %}>
+            {{ e.purchase_date }} • £{{ '%.2f'|format(e.gross_amount) }} • {{ e.description }}
+          </option>
+        {% endfor %}
+      </select>
+      <div class="form-text">Hold Ctrl/Cmd to select multiple.</div>
+    </div>
+
+    <div class="col-12 col-lg-2 d-grid">
+      <button class="btn btn-primary" type="submit">Upload</button>
+    </div>
+  </form>
+</div>
+
+<div class="card p-3">
+  <div class="d-flex justify-content-between align-items-center mb-2">
+    <h5 class="mb-0">All documents</h5>
+    <div class="small-muted">{{ docs|length }}</div>
+  </div>
+
+  {% if docs %}
+    <div class="d-grid gap-2">
+      {% for d in docs %}
+        {% set selected_task_ids = doc_task_map.get(d.id, []) %}
+        {% set selected_exp_ids  = doc_expense_map.get(d.id, []) %}
+
+        <div class="border rounded p-3">
+          <div class="d-flex justify-content-between align-items-start gap-2">
+            <div class="me-2">
+              <div class="fw-semibold">{{ d.title or (d.original_filename or 'Document') }}</div>
+              <div class="small-muted">
+                <span class="badge-soft text-capitalize">{{ d.doc_type or 'receipt' }}</span>
+                {% if d.photo_group %}<span class="badge-soft text-capitalize">{{ d.photo_group }}</span>{% endif %}
+                {% if d.size_bytes %} • {{ (d.size_bytes / 1024)|round(1) }} KB{% endif %}
+              </div>
+
+              {% if d.tags %}
+                <div class="small-muted mt-1">Tags: {{ d.tags }}</div>
               {% endif %}
-            </td>
 
-            <td class="text-muted">
-              {% if d.tasks %}
-                {% for t in d.tasks %}
-                  <span class="badge text-bg-light">{{ t.title }}</span>
-                {% endfor %}
+              {% if d.notes %}
+                <div class="small mt-2">{{ d.notes }}</div>
               {% endif %}
-            </td>
+            </div>
 
-            <td class="text-muted">{{ d.original_filename or "" }}</td>
-            <td class="text-muted">{{ d.created_at.strftime("%Y-%m-%d %H:%M") if d.created_at else "" }}</td>
-            <td class="text-end">
-              <button class="btn btn-sm btn-outline-secondary" type="button"
-                      onclick="toggleEdit('{{ d.id }}')">Edit</button>
+            <div class="d-flex gap-1 flex-shrink-0">
               <a class="btn btn-sm btn-outline-secondary" href="/documents/{{ d.id }}/preview" target="_blank">Preview</a>
-              <a class="btn btn-sm btn-outline-primary" href="/documents/{{ d.id }}/download">Download</a>
+              <a class="btn btn-sm btn-outline-secondary" href="/documents/{{ d.id }}/download">Download</a>
+
+              <button
+                class="btn btn-sm btn-outline-primary"
+                type="button"
+                data-bs-toggle="collapse"
+                data-bs-target="#edit-doc-{{ d.id }}"
+                aria-expanded="false"
+                aria-controls="edit-doc-{{ d.id }}">
+                Edit
+              </button>
 
               <form method="post" action="/documents/{{ d.id }}/delete" style="display:inline;"
                     onsubmit="return confirm('Delete this document?');">
-                <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+                <button class="btn btn-sm btn-outline-danger" type="submit">Del</button>
               </form>
-            </td>
-          </tr>
+            </div>
+          </div>
 
-          <!-- Inline edit row -->
-          <tr id="edit-{{ d.id }}" style="display:none;">
-            <td colspan="8">
-              <div class="border rounded p-3 bg-light">
-                <form method="post" action="/documents/{{ d.id }}/update" class="row g-3">
+          <div class="collapse mt-3" id="edit-doc-{{ d.id }}">
+            <div class="border rounded p-3 bg-light">
+              <form method="post" action="/documents/{{ d.id }}/update" class="row g-2">
+                <div class="col-12 col-lg-3">
+                  <label class="form-label small-muted mb-1">Type</label>
+                  <select class="form-select form-select-sm" name="doc_type">
+                    <option value="receipt"   {% if d.doc_type=='receipt' %}selected{% endif %}>receipt</option>
+                    <option value="photo"     {% if d.doc_type=='photo' %}selected{% endif %}>photo</option>
+                    <option value="warranty"  {% if d.doc_type=='warranty' %}selected{% endif %}>warranty</option>
+                    <option value="paperwork" {% if d.doc_type=='paperwork' %}selected{% endif %}>paperwork</option>
+                    <option value="recipe"    {% if d.doc_type=='recipe' %}selected{% endif %}>recipe</option>
+                  </select>
+                </div>
 
-                  <div class="col-12 col-md-4">
-                    <label class="form-label">Type</label>
-                    <select class="form-select" name="doc_type">
-                      <option value="receipt"   {% if d.doc_type == "receipt" %}selected{% endif %}>Receipt</option>
-                      <option value="paperwork" {% if d.doc_type == "paperwork" %}selected{% endif %}>Paperwork</option>
-                      <option value="photo"     {% if d.doc_type == "photo" %}selected{% endif %}>Photo</option>
-                      <option value="warranty"  {% if d.doc_type == "warranty" %}selected{% endif %}>Warranty</option>
-                      <option value="recipe"    {% if d.doc_type == "recipe" %}selected{% endif %}>Recipe / How-to</option>
-                    </select>
-                  </div>
+                <div class="col-12 col-lg-3">
+                  <label class="form-label small-muted mb-1">Photo group</label>
+                  <select class="form-select form-select-sm" name="photo_group">
+                    <option value="before" {% if d.photo_group=='before' %}selected{% endif %}>before</option>
+                    <option value="during" {% if d.photo_group=='during' %}selected{% endif %}>during</option>
+                    <option value="after"  {% if d.photo_group=='after' %}selected{% endif %}>after</option>
+                  </select>
+                  <div class="form-text">Only used for type “photo”.</div>
+                </div>
 
-                  <div class="col-12 col-md-4">
-                    <label class="form-label">Photo group (photos only)</label>
-                    <select class="form-select" name="photo_group">
-                      <option value="before" {% if d.photo_group == "before" %}selected{% endif %}>Before</option>
-                      <option value="during" {% if d.photo_group == "during" %}selected{% endif %}>During</option>
-                      <option value="after"  {% if d.photo_group == "after" %}selected{% endif %}>After</option>
-                    </select>
-                  </div>
+                <div class="col-12 col-lg-6">
+                  <label class="form-label small-muted mb-1">Title</label>
+                  <input class="form-control form-control-sm" name="title" value="{{ d.title or '' }}">
+                </div>
 
-                  <div class="col-12 col-md-4">
-                    <label class="form-label">Tags</label>
-                    <input class="form-control" name="tags" value="{{ d.tags or '' }}" placeholder="kitchen, plaster, invoice">
-                  </div>
-
-                  <div class="col-12">
-                    <label class="form-label">Title</label>
-                    <input class="form-control" name="title" value="{{ d.title or '' }}">
-                  </div>
-
-                  <div class="col-12">
-                    <label class="form-label">Notes</label>
-                    <textarea class="form-control" name="notes" rows="2">{{ d.notes or '' }}</textarea>
-                  </div>
-
-                  <div class="col-12 col-md-4">
-                    <label class="form-label">Room</label>
-                    <select class="form-select" name="room_id">
-                      <option value="">—</option>
-                      {% for r in rooms %}
+                <div class="col-12 col-lg-6">
+                  <label class="form-label small-muted mb-1">Room</label>
+                  <select class="form-select form-select-sm" name="room_id">
+                    <option value="">Unassigned</option>
+                    {% for r in rooms %}
                       <option value="{{ r.id }}" {% if d.room_id == r.id %}selected{% endif %}>{{ r.name }}</option>
-                      {% endfor %}
-                    </select>
-                  </div>
+                    {% endfor %}
+                  </select>
+                </div>
 
-                  <div class="col-12 col-md-4">
-                    <label class="form-label">Tasks (multi)</label>
-                    <select class="form-select" name="task_ids" multiple size="4">
-                      {% for t in tasks %}
-                        {% set selected = false %}
-                        {% if d.tasks %}
-                          {% for dt in d.tasks %}
-                            {% if dt.id == t.id %}{% set selected = true %}{% endif %}
-                          {% endfor %}
-                        {% endif %}
-                        <option value="{{ t.id }}" {% if selected %}selected{% endif %}>{{ t.title }} ({{ t.status }})</option>
-                      {% endfor %}
-                    </select>
-                  </div>
+                <div class="col-12 col-lg-6">
+                  <label class="form-label small-muted mb-1">Tags</label>
+                  <input class="form-control form-control-sm" name="tags" value="{{ d.tags or '' }}">
+                </div>
 
-                  <div class="col-12 col-md-4">
-                    <label class="form-label">Expense</label>
-                    <select class="form-select" name="expense_id">
-  <option value="">—</option>
-  {% for e in expenses %}
-    <option value="{{ e.id }}"
-      {% if preselect_expense_id and preselect_expense_id == e.id %}selected{% endif %}>
-      {{ e.vendor or "Expense" }} — {{ e.gross_amount }}
-    </option>
-  {% endfor %}
-</select>
+                <div class="col-12">
+                  <label class="form-label small-muted mb-1">Notes</label>
+                  <input class="form-control form-control-sm" name="notes" value="{{ d.notes or '' }}">
+                </div>
 
-                  </div>
+                <div class="col-12 col-lg-6">
+                  <label class="form-label small-muted mb-1">Linked tasks</label>
+                  <select class="form-select form-select-sm" name="task_ids" multiple size="7">
+                    {% for t in tasks %}
+                      <option value="{{ t.id }}" {% if t.id in selected_task_ids %}selected{% endif %}>
+                        {{ t.title }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </div>
 
-                  <div class="col-12">
-                    <button class="btn btn-primary" type="submit">Save</button>
-                    <button class="btn btn-outline-secondary" type="button" onclick="toggleEdit('{{ d.id }}')">Cancel</button>
-                  </div>
+                <div class="col-12 col-lg-6">
+                  <label class="form-label small-muted mb-1">Linked expenses</label>
+                  <!-- ✅ IMPORTANT: name="expense_ids" and multiple -->
+                  <select class="form-select form-select-sm" name="expense_ids" multiple size="7">
+                    {% for e in expenses %}
+                      <option value="{{ e.id }}" {% if e.id in selected_exp_ids %}selected{% endif %}>
+                        {{ e.purchase_date }} • £{{ '%.2f'|format(e.gross_amount) }} • {{ e.description }}
+                      </option>
+                    {% endfor %}
+                  </select>
+                </div>
 
-                </form>
-              </div>
-            </td>
-          </tr>
+                <div class="col-12 d-flex gap-2">
+                  <button class="btn btn-primary btn-sm" type="submit">Save</button>
+                  <button class="btn btn-outline-secondary btn-sm" type="button"
+                          data-bs-toggle="collapse"
+                          data-bs-target="#edit-doc-{{ d.id }}">
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
 
-          {% else %}
-          <tr><td colspan="8" class="text-muted">No documents uploaded yet.</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
+        </div>
+      {% endfor %}
     </div>
-  </div>
+  {% else %}
+    <div class="small-muted">No documents yet.</div>
+  {% endif %}
 </div>
-
-<script>
-  function toggleEdit(id) {
-    const row = document.getElementById('edit-' + id);
-    if (!row) return;
-    row.style.display = (row.style.display === 'none' || row.style.display === '') ? 'table-row' : 'none';
-  }
-</script>
 
 {% endblock %}

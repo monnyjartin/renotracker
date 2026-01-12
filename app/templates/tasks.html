@@ -1,6 +1,80 @@
 {% extends "_layout.html" %}
 {% block content %}
 
+<style>
+
+
+/* --- Kanban layout: fit the page on desktop, stacked on mobile --- */
+.kanban-board{
+  display:flex;
+  gap:16px;
+  align-items:flex-start;
+  width:100%;
+}
+
+.kanban-col{
+  flex:1 1 0;          /* each column shares width equally */
+  min-width:0;         /* IMPORTANT: prevents overflow from long content */
+}
+
+@media (max-width: 768px){
+  .kanban-board{
+    flex-direction:column;
+  }
+  .kanban-col{
+    width:100%;
+  }
+}
+
+
+
+  /* --- Drag/drop styling --- */
+  .dropzone {
+    min-height: 80px;
+  }
+  .dropzone.drag-over {
+    outline: 2px dashed rgba(0,0,0,.25);
+    outline-offset: 6px;
+    border-radius: 12px;
+  }
+  .task-card.dragging {
+    opacity: .55;
+  }
+
+  /* --- Status pill colours --- */
+  .status-pill {
+    display: inline-block;
+    padding: 2px 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    line-height: 18px;
+  }
+  .pill-todo    { background: rgba(13,110,253,.12); color: #0d6efd; }
+  .pill-doing   { background: rgba(13,202,240,.14); color: #0dcaf0; }
+  .pill-blocked { background: rgba(255,193,7,.18);  color: #b58100; }
+  .pill-done    { background: rgba(25,135,84,.16);  color: #198754; }
+
+  /* --- Status move buttons (colour-coded) --- */
+  .btn-status {
+    border-radius: 10px;
+    padding: 6px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid rgba(0,0,0,.10);
+    background: #fff;
+  }
+  .btn-status.todo    { color: #0d6efd; }
+  .btn-status.doing   { color: #0dcaf0; }
+  .btn-status.blocked { color: #b58100; }
+  .btn-status.done    { color: #198754; }
+
+  .btn-status.todo:hover    { background: rgba(13,110,253,.08); }
+  .btn-status.doing:hover   { background: rgba(13,202,240,.10); }
+  .btn-status.blocked:hover { background: rgba(255,193,7,.14); }
+  .btn-status.done:hover    { background: rgba(25,135,84,.10); }
+</style>
+
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
     <h2 class="mb-1">Tasks</h2>
@@ -60,20 +134,35 @@
   </form>
 </div>
 
-<div class="row g-3">
-  {% for col_name, col_tasks in cols.items() %}
-    <div class="col-12 col-md-6 col-xl-3">
-      <div class="card p-3 h-100">
+{% set order = ["todo","doing","blocked","done"] %}
+
+<div class="kanban-board" id="kanbanBoard">
+  {% for col_name in order %}
+    {% set col_tasks = cols[col_name] %}
+    <div class="kanban-col">
+      <div class="card p-3">
         <div class="d-flex justify-content-between align-items-center mb-2">
-          <div class="fw-semibold text-capitalize">{{ col_name }}</div>
+          <div class="d-flex align-items-center gap-2">
+            <div class="fw-semibold text-capitalize">{{ col_name }}</div>
+            <span class="status-pill pill-{{ col_name }}">{{ col_name|capitalize }}</span>
+          </div>
           <div class="small-muted">{{ col_tasks|length }}</div>
         </div>
 
-        {% if col_tasks %}
-          <div class="d-grid gap-2">
+        <div class="dropzone d-grid gap-2"
+             data-status="{{ col_name }}"
+             aria-label="Drop tasks here">
+          {% if col_tasks %}
             {% for t in col_tasks %}
               {% set is_open = (request.query_params.get('open') == t.id) %}
-              <div class="border rounded p-2" id="task-{{ t.id }}">
+              {% set p = t.progress if t.progress is not none else (100 if t.status == "done" else 0) %}
+
+              <div class="border rounded p-2 task-card"
+                   id="task-{{ t.id }}"
+                   draggable="true"
+                   data-task-id="{{ t.id }}"
+                   data-current-status="{{ col_name }}">
+
                 <div class="d-flex justify-content-between align-items-start gap-2">
                   <div class="me-2">
                     <div class="fw-semibold">{{ t.title }}</div>
@@ -110,22 +199,36 @@
                   <div class="small mt-2">{{ t.description }}</div>
                 {% endif %}
 
+                <!-- Progress bar on card -->
+                <div class="mt-2">
+                  <div class="d-flex justify-content-between small-muted">
+                    <span>Progress</span>
+                    <span>{{ p }}%</span>
+                  </div>
+                  <div class="progress" style="height: 6px;">
+                    <div class="progress-bar" role="progressbar"
+                         style="width: {{ p }}%;"
+                         aria-valuenow="{{ p }}" aria-valuemin="0" aria-valuemax="100"></div>
+                  </div>
+                </div>
+
+                <!-- Colour-coded status buttons -->
                 <div class="d-flex flex-wrap gap-2 mt-2">
                   <form method="post" action="/tasks/{{ t.id }}/move">
                     <input type="hidden" name="status" value="todo">
-                    <button class="btn btn-sm btn-outline-primary" type="submit">To do</button>
+                    <button class="btn-status todo" type="submit">To do</button>
                   </form>
                   <form method="post" action="/tasks/{{ t.id }}/move">
                     <input type="hidden" name="status" value="doing">
-                    <button class="btn btn-sm btn-outline-primary" type="submit">Doing</button>
+                    <button class="btn-status doing" type="submit">Doing</button>
                   </form>
                   <form method="post" action="/tasks/{{ t.id }}/move">
                     <input type="hidden" name="status" value="blocked">
-                    <button class="btn btn-sm btn-outline-primary" type="submit">Blocked</button>
+                    <button class="btn-status blocked" type="submit">Blocked</button>
                   </form>
                   <form method="post" action="/tasks/{{ t.id }}/move">
                     <input type="hidden" name="status" value="done">
-                    <button class="btn btn-sm btn-outline-primary" type="submit">Done</button>
+                    <button class="btn-status done" type="submit">Done</button>
                   </form>
                 </div>
 
@@ -173,32 +276,42 @@
                         <input class="form-control form-control-sm" type="number" name="priority" value="{{ t.priority }}" min="1" max="5">
                       </div>
 
-
-<div class="col-6 col-lg-3">
-  <label class="form-label small-muted mb-1">Progress (%)</label>
-  <input class="form-control form-control-sm" type="number" name="progress" min="0" max="100" value="{{ t.progress or 0 }}">
-</div>
-
-<div class="col-12">
-  <label class="form-label small-muted mb-1">Depends on (task IDs CSV)</label>
-  <input class="form-control form-control-sm" name="depends_on" value="{{ t.depends_on or '' }}" placeholder="e.g. 3f2a..., 9c1b...">
-</div>
-
+                      <!-- Slider progress (this is the one you liked) -->
                       <div class="col-12">
-  <label class="form-label small-muted mb-1">
-    Progress: <span id="prog-val-{{ t.id }}">{{ t.progress or 0 }}%</span>
-  </label>
-  <input
-    type="range"
-    class="form-range"
-    min="0"
-    max="100"
-    step="5"
-    name="progress"
-    value="{{ t.progress or 0 }}"
-    oninput="document.getElementById('prog-val-{{ t.id }}').innerText = this.value + '%'"
-  >
-</div>
+                        <label class="form-label small-muted mb-1">
+                          Progress: <span id="prog-val-{{ t.id }}">{{ p }}%</span>
+                        </label>
+
+                        <input
+                          id="prog-range-{{ t.id }}"
+                          type="range"
+                          class="form-range"
+                          min="0"
+                          max="100"
+                          step="5"
+                          name="progress"
+                          value="{{ p }}"
+                          oninput="
+                            document.getElementById('prog-val-{{ t.id }}').innerText = this.value + '%';
+                            document.getElementById('prog-num-{{ t.id }}').value = this.value;
+                          "
+                        >
+
+                        <input
+                          id="prog-num-{{ t.id }}"
+                          class="form-control form-control-sm mt-2"
+                          type="number"
+                          min="0"
+                          max="100"
+                          value="{{ p }}"
+                          oninput="
+                            const v=Math.max(0, Math.min(100, parseInt(this.value||0)));
+                            this.value=v;
+                            document.getElementById('prog-val-{{ t.id }}').innerText = v + '%';
+                            document.getElementById('prog-range-{{ t.id }}').value = v;
+                          "
+                        >
+                      </div>
 
                       <div class="col-12 col-lg-6">
                         <label class="form-label small-muted mb-1">Status</label>
@@ -224,13 +337,88 @@
 
               </div>
             {% endfor %}
-          </div>
-        {% else %}
-          <div class="small-muted">No tasks.</div>
-        {% endif %}
+          {% else %}
+            <div class="small-muted">No tasks.</div>
+          {% endif %}
+        </div>
       </div>
     </div>
   {% endfor %}
 </div>
+
+<script>
+(function () {
+  function postMove(taskId, newStatus) {
+    const fd = new FormData();
+    fd.append("status", newStatus);
+
+    return fetch(`/tasks/${taskId}/move`, {
+      method: "POST",
+      body: fd,
+      credentials: "same-origin"
+    }).then(r => {
+      if (!r.ok) throw new Error("Move failed");
+      return true;
+    });
+  }
+
+  let draggingEl = null;
+  let draggingId = null;
+
+  document.querySelectorAll(".task-card[draggable='true']").forEach(card => {
+    card.addEventListener("dragstart", (e) => {
+      draggingEl = card;
+      draggingId = card.getAttribute("data-task-id");
+      card.classList.add("dragging");
+      e.dataTransfer.effectAllowed = "move";
+      e.dataTransfer.setData("text/plain", draggingId);
+    });
+
+    card.addEventListener("dragend", () => {
+      card.classList.remove("dragging");
+      draggingEl = null;
+      draggingId = null;
+      document.querySelectorAll(".dropzone").forEach(z => z.classList.remove("drag-over"));
+    });
+  });
+
+  document.querySelectorAll(".dropzone").forEach(zone => {
+    zone.addEventListener("dragover", (e) => {
+      e.preventDefault();
+      zone.classList.add("drag-over");
+      e.dataTransfer.dropEffect = "move";
+    });
+
+    zone.addEventListener("dragleave", () => {
+      zone.classList.remove("drag-over");
+    });
+
+    zone.addEventListener("drop", async (e) => {
+      e.preventDefault();
+      zone.classList.remove("drag-over");
+
+      const newStatus = zone.getAttribute("data-status");
+      const taskId = e.dataTransfer.getData("text/plain") || draggingId;
+      if (!taskId || !newStatus) return;
+
+      // Optimistic UI: move immediately
+      const card = document.querySelector(`.task-card[data-task-id="${taskId}"]`);
+      if (!card) return;
+
+      const oldZone = card.closest(".dropzone");
+      zone.appendChild(card);
+
+      try {
+        await postMove(taskId, newStatus);
+        card.setAttribute("data-current-status", newStatus);
+      } catch (err) {
+        // revert on failure
+        if (oldZone) oldZone.appendChild(card);
+        alert("Could not move task. Please refresh and try again.");
+      }
+    });
+  });
+})();
+</script>
 
 {% endblock %}

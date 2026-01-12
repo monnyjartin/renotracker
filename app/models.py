@@ -149,12 +149,21 @@ class Document(Base):
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow, nullable=False)
 
     tasks = relationship("Task", secondary="document_tasks", backref="documents")
-
+    expenses = relationship("Expense", secondary="document_expenses", backref="documents")
 
 class DocumentTask(Base):
     __tablename__ = "document_tasks"
 
     document_id = Column(String, ForeignKey("documents.id"), primary_key=True)
     task_id = Column(String, ForeignKey("tasks.id"), primary_key=True)
+
+    created_at = Column(DateTime, default=utcnow, nullable=False)
+
+
+class DocumentExpense(Base):
+    __tablename__ = "document_expenses"
+
+    document_id = Column(String, ForeignKey("documents.id"), primary_key=True)
+    expense_id  = Column(String, ForeignKey("expenses.id"), primary_key=True)
 
     created_at = Column(DateTime, default=utcnow, nullable=False)

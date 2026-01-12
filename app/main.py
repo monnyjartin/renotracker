@@ -27,6 +27,7 @@ from .models import (
     Task,
     Document,
     DocumentTask,
+    DocumentExpense,
 )
 from .security import verify_password
 from .auth import get_current_user, login_user, logout_user
@@ -75,7 +76,9 @@ def _clean_str(v) -> str:
 
 def _is_unique_violation(ex: Exception) -> bool:
     msg = str(ex).lower()
-    return ("duplicate key value violates unique constraint" in msg) or ("unique" in msg and "violat" in msg)
+    return ("duplicate key value violates unique constraint" in msg) or (
+        "unique" in msg and "violat" in msg
+    )
 
 
 def _log_exception(prefix: str, ex: Exception) -> None:
@@ -86,13 +89,9 @@ def _log_exception(prefix: str, ex: Exception) -> None:
 def _require_user_and_project(request: Request, db: Session) -> User:
     user = get_current_user(request, db)
     if not user:
-        # FastAPI can't raise a Response cleanly from deep helpers.
-        # Raise a RuntimeError that our exception handler can convert to a redirect.
         raise RuntimeError("AUTH_REQUIRED_REDIRECT:/login")
-
     if not user.active_project_id:
         raise RuntimeError("AUTH_REQUIRED_REDIRECT:/projects")
-
     return user
 
 
@@ -131,6 +130,10 @@ def _norm_tags(v: str):
 
 
 def _parse_task_ids(task_ids):
+    """
+    Handles Form(None), single string, or list[str] from multi-select inputs.
+    Returns de-duped list[str] preserving order.
+    """
     if task_ids is None:
         return []
     vals = task_ids if isinstance(task_ids, list) else [task_ids]
@@ -164,7 +167,6 @@ def _csv_ids(v: str) -> str | None:
     parts = [p for p in parts if p]
     if not parts:
         return None
-    # de-dupe preserve order
     seen = set()
     out = []
     for p in parts:
@@ -182,7 +184,7 @@ def _get_dep_ids(task) -> list[str]:
 
 def _apply_finish_to_start(db: Session, task: Task) -> None:
     """
-    Enforce simple Finish-to-Start constraints:
+    Simple Finish-to-Start:
       - if task.start_date exists AND task.depends_on has ids,
         then task.start_date >= (max(dep_end) + 1 day)
         where dep_end uses dep.end_date else dep.due_date.
@@ -226,22 +228,18 @@ def ensure_schema() -> None:
       - documents.photo_group
       - documents.tags
       - document_tasks join table
+      - document_expenses join table
       - expenses.vendor
       - tasks.start_date
       - tasks.end_date
       - tasks.progress
       - tasks.depends_on
 
-    ALSO PATCHES timestamp defaults where DB has NOT NULL updated_at but ORM omits it:
-      - rooms.updated_at default now()
-      - tasks.updated_at default now()
-      - expenses.updated_at default now()
-      - projects.updated_at default now()
-      - documents.updated_at default now()
+    ALSO PATCHES updated_at default now() where DB has NOT NULL updated_at but ORM omits it.
     """
     try:
         with engine.begin() as conn:
-            # --- helper: set default now() on updated_at if column exists and has no default
+
             def ensure_updated_at_default(table: str):
                 res = conn.execute(
                     text(
@@ -260,7 +258,9 @@ def ensure_schema() -> None:
 
                 col_default = row[0]
                 if col_default is None:
-                    conn.execute(text(f"ALTER TABLE {table} ALTER COLUMN updated_at SET DEFAULT now()"))
+                    conn.execute(
+                        text(f"ALTER TABLE {table} ALTER COLUMN updated_at SET DEFAULT now()")
+                    )
 
                 has_created = (
                     conn.execute(
@@ -346,6 +346,31 @@ def ensure_schema() -> None:
                             task_id     VARCHAR NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
                             created_at  TIMESTAMP NULL,
                             PRIMARY KEY (document_id, task_id)
+                        )
+                        """
+                    )
+                )
+
+            # document_expenses join table
+            res = conn.execute(
+                text(
+                    """
+                    SELECT 1
+                    FROM information_schema.tables
+                    WHERE table_name='document_expenses'
+                    LIMIT 1
+                    """
+                )
+            )
+            if res.first() is None:
+                conn.execute(
+                    text(
+                        """
+                        CREATE TABLE document_expenses (
+                            document_id VARCHAR NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+                            expense_id  VARCHAR NOT NULL REFERENCES expenses(id)  ON DELETE CASCADE,
+                            created_at  TIMESTAMP NULL,
+                            PRIMARY KEY (document_id, expense_id)
                         )
                         """
                     )
@@ -782,19 +807,23 @@ def expenses_list(request: Request, db: Session = Depends(get_db)):
 
     expenses = q.order_by(Expense.purchase_date.desc(), Expense.created_at.desc()).limit(200).all()
 
+    # Build docs_by_expense using DocumentExpense join table (NOT Document.expense_id)
     doc_rows = (
-        db.query(Document.id, Document.expense_id, Document.title)
+        db.query(DocumentExpense.expense_id, Document.id, Document.title)
+        .join(Document, DocumentExpense.document_id == Document.id)
         .filter(Document.project_id == active_project.id)
-        .filter(Document.expense_id.isnot(None))
         .order_by(Document.created_at.desc())
         .all()
     )
 
     docs_by_expense = {}
-    for doc_id, exp_id, title in doc_rows:
+    for exp_id, doc_id, title in doc_rows:
         if not exp_id:
             continue
-        docs_by_expense.setdefault(exp_id, []).append({"id": doc_id, "title": title or "Document"})
+        docs_by_expense.setdefault(exp_id, []).append(
+            {"id": doc_id, "title": title or "Document"}
+        )
+
 
     return templates.TemplateResponse(
         "expenses.html",
@@ -1078,8 +1107,8 @@ def tasks_update(
     end_date: str = Form(""),
     priority: int = Form(3),
     status: str = Form(""),
-    progress: str = Form(""),        # accept as string (safe with HTML inputs)
-    depends_on: str = Form(""),      # ✅ THIS WAS MISSING
+    progress: str = Form(""),
+    depends_on: str = Form(""),
 ):
     user = _require_user_and_project(request, db)
 
@@ -1103,13 +1132,9 @@ def tasks_update(
     t.start_date = sd
     t.end_date = ed
 
-    # Progress 0..100
     _set_if_attr(t, "progress", _clamp_int(progress, 0, 100, (getattr(t, "progress", 0) or 0)))
-
-    # Dependencies CSV
     _set_if_attr(t, "depends_on", _csv_ids(depends_on))
 
-    # Status logic
     st = _clean_str(status).lower()
     if st in ("todo", "doing", "blocked", "done"):
         t.status = st
@@ -1119,7 +1144,6 @@ def tasks_update(
             _set_if_attr(t, "progress", 100)
         else:
             t.completed_at = None
-            # optional: if user sets progress >0 but status still todo, bump to doing
             if (getattr(t, "progress", 0) or 0) > 0 and t.status == "todo":
                 t.status = "doing"
 
@@ -1134,7 +1158,6 @@ def tasks_update(
         return _redirect("/tasks?err=save_failed")
 
     return _redirect("/tasks")
-
 
 
 @app.post("/tasks/{task_id}/delete")
@@ -1168,14 +1191,6 @@ async def task_gantt_update(
     db: Session = Depends(get_db),
     payload: dict = Body(...),
 ):
-    """
-    Receives updates from the Gantt UI (drag, resize, progress changes).
-    Expected payload keys (any subset):
-      - start: 'YYYY-MM-DD'
-      - end:   'YYYY-MM-DD'
-      - progress: 0..100
-      - depends_on: 'id1,id2' (optional)
-    """
     user = _require_user_and_project(request, db)
 
     t = db.get(Task, task_id)
@@ -1194,7 +1209,21 @@ async def task_gantt_update(
             t.end_date = date.fromisoformat(end_s)
 
         if prog_v is not None:
-            _set_if_attr(t, "progress", _clamp_int(prog_v, 0, 100, (getattr(t, "progress", 0) or 0)))
+            prog = _clamp_int(prog_v, 0, 100, (getattr(t, "progress", 0) or 0))
+            _set_if_attr(t, "progress", prog)
+
+            if prog >= 100:
+                t.status = "done"
+                if not t.completed_at:
+                    t.completed_at = utcnow()
+            elif prog > 0:
+                if (t.status or "todo") == "todo":
+                    t.status = "doing"
+                t.completed_at = None
+            else:
+                if t.status == "done":
+                    t.status = "todo"
+                t.completed_at = None
 
         if dep_v is not None:
             _set_if_attr(t, "depends_on", _csv_ids(str(dep_v)))
@@ -1236,11 +1265,9 @@ def gantt_view(request: Request, db: Session = Depends(get_db)):
     gantt_tasks = []
 
     for t in tasks:
-        # Prefer explicit plan dates
         start_date = getattr(t, "start_date", None)
         end_date = getattr(t, "end_date", None)
 
-        # Fallbacks
         if not start_date:
             if getattr(t, "created_at", None):
                 start_date = t.created_at.date()
@@ -1258,12 +1285,10 @@ def gantt_view(request: Request, db: Session = Depends(get_db)):
         if end_date < start_date:
             end_date = start_date
 
-        # Label
         label = t.title
         if t.room_id and t.room_id in room_map:
             label = f"[{room_map[t.room_id]}] {label}"
 
-        # Progress (0..100) with sensible defaults
         progress = getattr(t, "progress", None)
         if progress is None:
             progress = 100 if (t.status == "done") else 0
@@ -1272,7 +1297,6 @@ def gantt_view(request: Request, db: Session = Depends(get_db)):
         except Exception:
             progress = 0
 
-        # Dependencies (CSV -> comma list, no spaces)
         deps_raw = getattr(t, "depends_on", None) or ""
         deps = ",".join([x.strip() for x in deps_raw.split(",") if x.strip()])
 
@@ -1301,7 +1325,6 @@ def gantt_view(request: Request, db: Session = Depends(get_db)):
     )
 
 
-
 # ----------------
 # Documents (MinIO)
 # ----------------
@@ -1318,7 +1341,13 @@ def documents(request: Request, db: Session = Depends(get_db)):
         .all()
     )
 
-    rooms = db.query(Room).filter(Room.project_id == user.active_project_id).order_by(Room.name.asc()).all()
+    rooms = (
+        db.query(Room)
+        .filter(Room.project_id == user.active_project_id)
+        .order_by(Room.name.asc())
+        .all()
+    )
+
     tasks = (
         db.query(Task)
         .filter(Task.project_id == user.active_project_id)
@@ -1326,6 +1355,7 @@ def documents(request: Request, db: Session = Depends(get_db)):
         .limit(200)
         .all()
     )
+
     expenses = (
         db.query(Expense)
         .filter(Expense.project_id == user.active_project_id)
@@ -1344,6 +1374,16 @@ def documents(request: Request, db: Session = Depends(get_db)):
     for row in dt_rows:
         doc_task_map.setdefault(row.document_id, []).append(row.task_id)
 
+    de_rows = (
+        db.query(DocumentExpense)
+        .join(Document, DocumentExpense.document_id == Document.id)
+        .filter(Document.project_id == user.active_project_id)
+        .all()
+    )
+    doc_expense_map = {}
+    for row in de_rows:
+        doc_expense_map.setdefault(row.document_id, []).append(row.expense_id)
+
     return templates.TemplateResponse(
         "documents.html",
         {
@@ -1355,6 +1395,7 @@ def documents(request: Request, db: Session = Depends(get_db)):
             "tasks": tasks,
             "expenses": expenses,
             "doc_task_map": doc_task_map,
+            "doc_expense_map": doc_expense_map,
             "s3_enabled": s3_enabled(),
             "err": request.query_params.get("err") or "",
             "preselect_expense_id": preselect_expense_id,
@@ -1373,15 +1414,15 @@ async def documents_upload(
     notes: str = Form(""),
     tags: str = Form(""),
     room_id: str = Form(""),
-    expense_id: str = Form(""),
+    expense_ids: list[str] | str | None = Form(None),
     task_ids: list[str] | str | None = Form(None),
     photo_group: str = Form("before"),
 ):
     user = _require_user_and_project(request, db)
 
-    room_id = _clean_str(room_id) or None
-    expense_id = _clean_str(expense_id) or None
+    room_id_n = _clean_str(room_id) or None
     task_ids_list = _parse_task_ids(task_ids)
+    expense_ids_list = _parse_task_ids(expense_ids)
 
     doc_type_n = _norm_doc_type(doc_type)
     photo_group_n = _norm_photo_group(doc_type_n, photo_group)
@@ -1400,8 +1441,7 @@ async def documents_upload(
     d = Document(
         id=str(uuid4()),
         project_id=user.active_project_id,
-        room_id=room_id,
-        expense_id=expense_id,
+        room_id=room_id_n,
         doc_type=doc_type_n,
         photo_group=photo_group_n,
         title=safe_title,
@@ -1422,8 +1462,13 @@ async def documents_upload(
         t = db.get(Task, tid)
         if t and t.project_id == user.active_project_id:
             db.add(DocumentTask(document_id=d.id, task_id=tid, created_at=utcnow()))
-    db.commit()
 
+    for eid in expense_ids_list:
+        e = db.get(Expense, eid)
+        if e and e.project_id == user.active_project_id:
+            db.add(DocumentExpense(document_id=d.id, expense_id=eid, created_at=utcnow()))
+
+    db.commit()
     return _redirect("/documents")
 
 
@@ -1438,7 +1483,7 @@ def documents_update(
     notes: str = Form(""),
     tags: str = Form(""),
     room_id: str = Form(""),
-    expense_id: str = Form(""),
+    expense_ids: list[str] | str | None = Form(None),
     task_ids: list[str] | str | None = Form(None),
 ):
     user = _require_user_and_project(request, db)
@@ -1456,10 +1501,9 @@ def documents_update(
     d.notes = _clean_str(notes) or None
     d.tags = _norm_tags(tags)
     d.room_id = _clean_str(room_id) or None
-    d.expense_id = _clean_str(expense_id) or None
-
     _set_if_attr(d, "updated_at", utcnow())
 
+    # --- sync tasks
     new_task_ids = set(_parse_task_ids(task_ids))
     existing = db.query(DocumentTask).filter(DocumentTask.document_id == d.id).all()
     existing_ids = set(x.task_id for x in existing)
@@ -1476,6 +1520,24 @@ def documents_update(
         t = db.get(Task, tid)
         if t and t.project_id == user.active_project_id:
             db.add(DocumentTask(document_id=d.id, task_id=tid, created_at=utcnow()))
+
+    # --- sync expenses
+    new_expense_ids = set(_parse_task_ids(expense_ids))
+    existing_e = db.query(DocumentExpense).filter(DocumentExpense.document_id == d.id).all()
+    existing_e_ids = set(x.expense_id for x in existing_e)
+
+    to_remove_e = existing_e_ids - new_expense_ids
+    if to_remove_e:
+        db.query(DocumentExpense).filter(
+            DocumentExpense.document_id == d.id,
+            DocumentExpense.expense_id.in_(list(to_remove_e))
+        ).delete(synchronize_session=False)
+
+    to_add_e = new_expense_ids - existing_e_ids
+    for eid in to_add_e:
+        e = db.get(Expense, eid)
+        if e and e.project_id == user.active_project_id:
+            db.add(DocumentExpense(document_id=d.id, expense_id=eid, created_at=utcnow()))
 
     db.commit()
     return _redirect("/documents")

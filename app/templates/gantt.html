@@ -4,7 +4,9 @@
 <div class="d-flex justify-content-between align-items-center mb-3">
   <div>
     <h2 class="mb-1">Gantt</h2>
-    <div class="small-muted">Project: <span class="badge-soft">{{ active_project.name }}</span></div>
+    <div class="small-muted">
+      Project: <span class="badge-soft">{{ active_project.name }}</span>
+    </div>
   </div>
 
   <div class="d-flex gap-2">
@@ -16,84 +18,86 @@
   <div id="gantt"></div>
 </div>
 
-<!-- Frappe Gantt (simple, dependency + drag/resize + progress built-in) -->
+<div id="toast"
+     style="position:fixed;bottom:16px;right:16px;display:none;padding:10px 12px;border-radius:10px;background:#111;color:#fff;font-size:13px;z-index:9999;">
+</div>
+
+<!-- Frappe Gantt -->
 <link rel="stylesheet" href="https://unpkg.com/frappe-gantt/dist/frappe-gantt.css">
 <script src="https://unpkg.com/frappe-gantt/dist/frappe-gantt.umd.js"></script>
 
+<style>
+  /* show more rows */
+  #gantt { height: 70vh; overflow: hidden; }
+
+  /* make progress fill clearly visible */
+  .gantt .bar-progress { opacity: 1; }
+
+  /* stronger colours */
+  .gantt .bar-progress { fill: #2e7d32 !important; } /* green */
+  .gantt .bar { fill: #bdbdbd !important; }          /* base bar */
+</style>
+
 <script>
-  // IMPORTANT: use |safe so JSON isn't HTML-escaped (common reason for blank chart)
   const tasks = {{ gantt_tasks_json | safe }};
 
-  // Quick sanity check (if this prints 0 when you expect tasks, you’re feeding empty data)
-  console.log("Gantt tasks:", tasks);
+  function toast(msg, ok=true) {
+    const el = document.getElementById("toast");
+    el.textContent = msg;
+    el.style.display = "block";
+    el.style.background = ok ? "#111" : "#b00020";
+    setTimeout(() => el.style.display = "none", 1800);
+  }
 
-  function postUpdate(taskId, patch) {
-    return fetch(`/tasks/${taskId}/gantt-update`, {
+  async function saveTask(id, patch) {
+    const res = await fetch(`/tasks/${id}/gantt-update`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch)
-    })
-    .then(r => r.json())
-    .then(j => {
-      if (!j || j.ok !== true) {
-        console.warn("Update failed:", j);
-        alert("Could not save Gantt change. See console for details.");
-      }
-      return j;
-    })
-    .catch(err => {
-      console.error(err);
-      alert("Could not save Gantt change. See console for details.");
     });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || "save_failed");
+    return data;
   }
 
-  // Frappe Gantt wants:
-  // id, name, start, end, progress, dependencies (comma-separated ids)
   const gantt = new Gantt("#gantt", tasks, {
     view_mode: "Day",
-    date_format: "YYYY-MM-DD",
+    bar_height: 18,
+    padding: 14,
 
-    on_click: function(task) {
-      // open inline editor on Tasks board
-      window.location.href = `/tasks?open=${encodeURIComponent(task.id)}`;
+    on_date_change: async (task, start, end) => {
+      try {
+        await saveTask(task.id, {
+          start: start.toISOString().slice(0,10),
+          end: end.toISOString().slice(0,10),
+        });
+        toast("Saved");
+      } catch(e) {
+        toast("Save failed", false);
+      }
     },
 
-    on_date_change: function(task, start, end) {
-      // start/end are JS Date objects
-      const s = start.toISOString().slice(0,10);
-      const e = end.toISOString().slice(0,10);
-
-      // persist
-      postUpdate(task.id, { start: s, end: e });
+    on_progress_change: async (task, progress) => {
+      try {
+        await saveTask(task.id, { progress: Math.round(progress) });
+        toast("Saved");
+      } catch(e) {
+        toast("Save failed", false);
+      }
     },
 
-    on_progress_change: function(task, progress) {
-      // persist
-      postUpdate(task.id, { progress: Math.round(progress) });
-    },
-
-    on_view_change: function(mode) {
-      // optional hook
+    // Note: some builds of frappe-gantt don’t fire this event.
+    // If you don’t see it firing, we’ll implement dependency save using a custom UI instead.
+    on_dependency_change: async (task, deps) => {
+      const depStr = Array.isArray(deps) ? deps.join(",") : (deps || "");
+      try {
+        await saveTask(task.id, { depends_on: depStr });
+        toast("Saved");
+      } catch(e) {
+        toast("Save failed", false);
+      }
     }
   });
-
-  // Optional: if you want a nicer default scale
-  // gantt.change_view_mode("Week");
 </script>
-
-<style>
-  /* Make it scroll nicely if many tasks */
-  #gantt {
-    overflow-x: auto;
-  }
-  /* Slightly taller bars */
-  .gantt .bar-wrapper .bar {
-    height: 22px;
-  }
-  .gantt .bar-wrapper {
-    padding-top: 6px;
-    padding-bottom: 6px;
-  }
-</style>
 
 {% endblock %}
